@@ -1,0 +1,12 @@
+[package]
+name = "rtp-types"
+description = "RTP packet parser and writers"
+version = "0.0.1"
+authors = ["Matthew Waters <matthew@centricular.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+keywords = ["RTP"]
+categories = ["network-programming", "encoding", "multimedia", "parsing", "multimedia::encoding"]
+documentation = "https://docs.rs/rtp-types"
+repository = "https://github.com/ystreet/librice"
+
