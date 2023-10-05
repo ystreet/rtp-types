@@ -10,3 +10,5 @@ categories = ["network-programming", "encoding", "multimedia", "parsing", "multi
 documentation = "https://docs.rs/rtp-types"
 repository = "https://github.com/ystreet/librice"
 
+[dependencies]
+smallvec = "1"

@@ -23,7 +23,7 @@ pub enum RtpWriteError {
 
 pub struct RtpPacketBuilder<'a> {
     padding: Option<u8>,
-    csrcs: Vec<u32>,
+    csrcs: smallvec::SmallVec<[u32; 15]>,
     marker: bool,
     payload_type: u8,
     sequence_number: u16,
@@ -45,7 +45,7 @@ impl<'a> RtpPacketBuilder<'a> {
     pub fn new() -> RtpPacketBuilder<'a> {
         Self {
             padding: None,
-            csrcs: vec![],
+            csrcs: smallvec::smallvec![],
             marker: false,
             // set to an invalid value to force the user to update
             payload_type: 0xff,
