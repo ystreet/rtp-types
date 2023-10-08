@@ -21,6 +21,7 @@ pub enum RtpWriteError {
     InvalidPadding,
 }
 
+/// Struct for building a new RTP packet
 pub struct RtpPacketBuilder<'a> {
     padding: Option<u8>,
     csrcs: smallvec::SmallVec<[u32; 15]>,
@@ -42,6 +43,7 @@ impl<'a> Default for RtpPacketBuilder<'a> {
 impl<'a> RtpPacketBuilder<'a> {
     const MAX_N_CSRCS: usize = 0xf;
 
+    /// Construct a new packet builder
     pub fn new() -> RtpPacketBuilder<'a> {
         Self {
             padding: None,
@@ -57,46 +59,55 @@ impl<'a> RtpPacketBuilder<'a> {
         }
     }
 
+    /// Set the number of padding bytes to use for this packet
     pub fn padding(mut self, padding: u8) -> Self {
         self.padding = Some(padding);
         self
     }
 
+    /// Add a Contribution Source for this packet
     pub fn add_csrc(mut self, csrc: u32) -> Self {
         self.csrcs.push(csrc);
         self
     }
 
+    /// Set the marker bit for this packet
     pub fn marker(mut self, marker: bool) -> Self {
         self.marker = marker;
         self
     }
 
+    /// Set the payload type for this packet
     pub fn payload_type(mut self, pt: u8) -> Self {
         self.payload_type = pt;
         self
     }
 
+    /// Set the sequence number for this packet
     pub fn sequence_number(mut self, sequence: u16) -> Self {
         self.sequence_number = sequence;
         self
     }
 
+    /// Set the RTP timestamp for this packet
     pub fn timestamp(mut self, timestamp: u32) -> Self {
         self.timestamp = timestamp;
         self
     }
 
+    /// Set the Sequence source for this packet
     pub fn ssrc(mut self, ssrc: u32) -> Self {
         self.ssrc = ssrc;
         self
     }
 
+    /// Set the extension header for this packet
     pub fn extension(mut self, extension_id: u16, extension_data: &'a [u8]) -> Self {
         self.extension = Some((extension_id, extension_data));
         self
     }
 
+    /// Set the payload data for this packet
     pub fn payload(mut self, payload: &'a [u8]) -> Self {
         self.payload = Some(payload);
         self
@@ -129,6 +140,8 @@ impl<'a> RtpPacketBuilder<'a> {
         Ok(size)
     }
 
+    /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
+    /// written.
     pub fn write_into_unchecked(self, buf: &mut [u8]) -> usize {
         let mut byte = 0x80; // rtp version 24
         if self.padding.is_some() {
@@ -196,6 +209,8 @@ impl<'a> RtpPacketBuilder<'a> {
         write_i
     }
 
+    /// Write this packet into `buf`.  On success returns the number of bytes written or an
+    /// `RtpWriteError` on failure.
     pub fn write_into(self, buf: &mut [u8]) -> Result<usize, RtpWriteError> {
         if self.payload_type > 0x7f {
             return Err(RtpWriteError::InvalidPayloadType(self.payload_type));
