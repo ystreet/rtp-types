@@ -22,6 +22,7 @@ pub enum RtpWriteError {
 }
 
 /// Struct for building a new RTP packet
+#[derive(Clone)]
 pub struct RtpPacketBuilder<'a> {
     padding: Option<u8>,
     csrcs: smallvec::SmallVec<[u32; 15]>,
