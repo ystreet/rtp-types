@@ -3,11 +3,13 @@
 use std::fmt;
 
 /// An error produced when parsing a packet
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum RtpParseError {
     /// Version is unsupported.  This implementation only supports version 2
+    #[error("Unsupported RTP version {}", .0)]
     UnsupportedVersion(u8),
     /// There is not enough data available to successfully parse the packet
+    #[error("Not enough data available to parse the packet: expected {}, actual {}", .expected, .actual)]
     Truncated {
         /// The expected size
         expected: usize,
@@ -15,6 +17,7 @@ pub enum RtpParseError {
         actual: usize,
     },
     /// The padding byte does not contain a valid value
+    #[error("Padding contains invalid value {}", .0)]
     PaddingInvalid(u8),
 }
 

@@ -12,3 +12,4 @@ repository = "https://github.com/ystreet/librice"
 
 [dependencies]
 smallvec = { version = "1", features = ["union"] }
+thiserror = "1"

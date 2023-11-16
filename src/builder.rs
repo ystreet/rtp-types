@@ -3,21 +3,27 @@
 use crate::RtpPacket;
 
 /// Errors produced when wrting a packet
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RtpWriteError {
     /// Output buffer is not large enough to fit the resulting buffer.  The requested size is
     /// returned.
+    #[error("Output buffer is not large enough to fit the resulting buffer. Requested size: {}", .0)]
     OutputTooSmall(usize),
     /// The payload type provided is not valid.
+    #[error("Invalid payload type {}", .0)]
     InvalidPayloadType(u8),
     /// The requested packet is too large.
+    #[error("Packet is too large")]
     PacketTooLarge,
     /// Too many Contribution Sources specified.  The number of requested Contribution sources is
     /// returned.
+    #[error("Too many contribution sources: {}", .0)]
     TooManyContributionSources(usize),
     /// The extension data is not padded to a multiple of 4 bytes.
+    #[error("Extension data is not padded to a multiple of 4")]
     ExtensionDataNotPadded,
     /// Padding value is invalid.
+    #[error("Value used for padding is invalid")]
     InvalidPadding,
 }
 
