@@ -113,7 +113,8 @@ impl<'a> RtpPacketBuilder<'a> {
         self
     }
 
-    fn calculate_size(&self) -> Result<usize, RtpWriteError> {
+    /// Calculate the size required for writing the packet.
+    pub fn calculate_size(&self) -> Result<usize, RtpWriteError> {
         let payload_len = if let Some(payload) = self.payload {
             payload.len()
         } else {
