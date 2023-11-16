@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::fmt;
+
 /// An error produced when parsing a packet
 #[derive(Debug)]
 pub enum RtpParseError {
@@ -19,6 +21,37 @@ pub enum RtpParseError {
 /// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed
 pub struct RtpPacket<'a> {
     data: &'a [u8],
+}
+
+impl<'a> fmt::Debug for RtpPacket<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct DebugCsrc<'a>(&'a RtpPacket<'a>);
+
+        impl<'a> fmt::Debug for DebugCsrc<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut list = f.debug_list();
+
+                for csrc in self.0.csrc() {
+                    list.entry(&csrc);
+                }
+
+                list.finish()
+            }
+        }
+
+        f.debug_struct("RtpPacket")
+            .field("version", &self.version())
+            .field("marker", &self.marker())
+            .field("payload_type", &self.payload_type())
+            .field("sequence_number", &self.sequence_number())
+            .field("timestamp", &self.timestamp())
+            .field("ssrc", &self.ssrc())
+            .field("csrc", &DebugCsrc(self))
+            .field("extension", &self.extension())
+            .field("payload", &self.payload())
+            .field("padding", &self.padding())
+            .finish()
+    }
 }
 
 impl<'a> RtpPacket<'a> {
