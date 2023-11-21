@@ -38,7 +38,7 @@ pub struct RtpPacketBuilder<'a> {
     timestamp: u32,
     ssrc: u32,
     extension: Option<(u16, &'a [u8])>,
-    payload: Option<&'a [u8]>,
+    payloads: smallvec::SmallVec<[&'a [u8]; 16]>,
 }
 
 impl<'a> Default for RtpPacketBuilder<'a> {
@@ -62,7 +62,7 @@ impl<'a> RtpPacketBuilder<'a> {
             timestamp: 0,
             ssrc: 0,
             extension: None,
-            payload: None,
+            payloads: smallvec::smallvec![],
         }
     }
 
@@ -114,19 +114,18 @@ impl<'a> RtpPacketBuilder<'a> {
         self
     }
 
-    /// Set the payload data for this packet
+    /// Add a chunk of payload data for this packet.
+    ///
+    /// Can be called multiple times, in which case the payload data chunks will be
+    /// concatenated when the final packet is created.
     pub fn payload(mut self, payload: &'a [u8]) -> Self {
-        self.payload = Some(payload);
+        self.payloads.push(payload);
         self
     }
 
     /// Calculate the size required for writing the packet.
     pub fn calculate_size(&self) -> Result<usize, RtpWriteError> {
-        let payload_len = if let Some(payload) = self.payload {
-            payload.len()
-        } else {
-            0
-        };
+        let payload_len = self.payloads.iter().map(|p| p.len()).sum::<usize>();
         let extension_len = if let Some((_ext_id, ext_data)) = self.extension {
             if ext_data.len() > u16::MAX as usize {
                 return Err(RtpWriteError::PacketTooLarge);
@@ -203,9 +202,10 @@ impl<'a> RtpPacketBuilder<'a> {
             }
         }
 
-        if let Some(payload) = self.payload {
-            buf[write_i..write_i + payload.len()].copy_from_slice(payload);
-            write_i += payload.len();
+        for payload in &self.payloads {
+            let payload_len = payload.len();
+            buf[write_i..write_i + payload_len].copy_from_slice(payload);
+            write_i += payload_len;
         }
 
         if let Some(padding) = self.padding {
@@ -316,6 +316,27 @@ mod tests {
         assert_eq!(csrc.next(), Some(0x01020304));
         assert_eq!(csrc.next(), Some(0x05060708));
         assert_eq!(csrc.next(), None);
+    }
+
+    #[test]
+    fn write_rtp_multiple_payloads() {
+        let mut data = [0; 128];
+        let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
+        let more_payload_data = [9, 10, 11];
+        let size = RtpPacketBuilder::new()
+            .payload_type(96)
+            .payload(&payload_data)
+            .payload(&more_payload_data)
+            .payload(&more_payload_data[0..1])
+            .write_into(&mut data)
+            .unwrap();
+        assert_eq!(size, 24);
+        let data = &data[..size];
+        println!("{data:?}");
+        let rtp = RtpPacket::parse(data).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.payload(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 9]);
     }
 
     #[test]
