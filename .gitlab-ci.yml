@@ -1,0 +1,24 @@
+image: rust:latest
+
+stages:
+  - lint
+  - build
+
+tests:
+  stage: build
+  script:
+    - cargo build --verbose
+    - cargo test --verbose
+
+clippy:
+  stage: lint
+  script:
+    - rustup component add clippy
+    - cargo clippy --verbose -- -D warnings
+
+fmt:
+  stage: lint
+  script:
+    - rustup component add rustfmt
+    - cargo fmt -- --check
+
