@@ -1,5 +1,5 @@
-[![crates.io](https://img.shields.io/crates/v/rtp-types.svg)](https://crates.io/crates/librice)
-[![docs.rs](https://docs.rs/rtp-types/badge.svg)](https://docs.rs/librice)
+[![crates.io](https://img.shields.io/crates/v/rtp-types.svg)](https://crates.io/crates/rtp-types)
+[![docs.rs](https://docs.rs/rtp-types/badge.svg)](https://docs.rs/rtp-types)
 
 # rtp-types
 
