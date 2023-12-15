@@ -8,7 +8,7 @@ edition = "2021"
 keywords = ["RTP"]
 categories = ["network-programming", "encoding", "multimedia", "parsing", "multimedia::encoding"]
 documentation = "https://docs.rs/rtp-types"
-repository = "https://github.com/ystreet/librice"
+repository = "https://github.com/ystreet/rtp-types"
 
 [dependencies]
 smallvec = { version = "1", features = ["union"] }
