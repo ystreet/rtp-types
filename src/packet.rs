@@ -22,6 +22,7 @@ pub enum RtpParseError {
 }
 
 /// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed
+#[repr(transparent)]
 pub struct RtpPacket<'a> {
     data: &'a [u8],
 }
