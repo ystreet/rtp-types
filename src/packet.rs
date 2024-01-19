@@ -61,6 +61,9 @@ impl<'a> RtpPacket<'a> {
     /// The minimum number of bytes a RTP packet must be to be parsed correctly
     pub const MIN_RTP_PACKET_LEN: usize = 12;
 
+    /// The maximum number of CSRCs a RTP packet can contain
+    pub const MAX_N_CSRCS: usize = 0xf;
+
     /// Parse a byte slice into a [`RtpPacket`].  This implementation prefers to fail fast and will
     /// return errors when the size of passed in data is not sufficient for values described in the
     /// data.
