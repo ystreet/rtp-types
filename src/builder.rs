@@ -71,9 +71,21 @@ impl<'a> RtpPacketBuilder<'a> {
         self
     }
 
+    /// Set 1. whether padding is used and 2. the number of padding bytes to use for this packet
+    pub fn maybe_padding(mut self, padding: Option<u8>) -> Self {
+        self.padding = padding;
+        self
+    }
+
     /// Add a Contribution Source for this packet
     pub fn add_csrc(mut self, csrc: u32) -> Self {
         self.csrcs.push(csrc);
+        self
+    }
+
+    /// Clear any CSRCs configured for this packet
+    pub fn clear_csrcs(mut self) -> Self {
+        self.csrcs.clear();
         self
     }
 
@@ -113,12 +125,24 @@ impl<'a> RtpPacketBuilder<'a> {
         self
     }
 
+    /// Clear any extension data configured for this packet
+    pub fn clear_extension(mut self) -> Self {
+        self.extension = None;
+        self
+    }
+
     /// Add a chunk of payload data for this packet.
     ///
     /// Can be called multiple times, in which case the payload data chunks will be
     /// concatenated when the final packet is created.
     pub fn payload(mut self, payload: &'a [u8]) -> Self {
         self.payloads.push(payload);
+        self
+    }
+
+    /// Clear any payloads currently configured
+    pub fn clear_payloads(mut self) -> Self {
+        self.payloads.clear();
         self
     }
 

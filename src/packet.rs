@@ -226,7 +226,6 @@ impl<'a> RtpPacket<'a> {
     pub fn extension(&self) -> Option<(u16, &[u8])> {
         if self.extension_bit() {
             let offset = self.extension_offset();
-            println!("{offset} {}", self.data.len());
             let id = (self.data[offset] as u16) << 8 | self.data[offset + 1] as u16;
             let offset = offset + 4;
             Some((id, &self.data[offset..offset + self.extension_len()]))
@@ -254,6 +253,28 @@ impl<'a> RtpPacket<'a> {
         };
         &self.data[offset..self.data.len() - pad]
     }
+
+    /// Creates a builder that will be able to reconstruct this packet byte for byte (excluding
+    /// any padding bytes).  Any aspect of the returned builder can be modified.
+    pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<'a> {
+        let mut builder = crate::RtpPacketBuilder::new()
+            .marker(self.marker())
+            .payload_type(self.payload_type())
+            .sequence_number(self.sequence_number())
+            .timestamp(self.timestamp())
+            .ssrc(self.ssrc())
+            .payload(self.payload());
+        for csrc in self.csrc() {
+            builder = builder.add_csrc(csrc);
+        }
+        if let Some((ext_id, ext_data)) = self.extension() {
+            builder = builder.extension(ext_id, ext_data);
+        }
+        if let Some(padding) = self.padding() {
+            builder = builder.padding(padding);
+        }
+        builder
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +298,9 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[]);
+        let mut built = vec![];
+        rtp.as_builder().write(&mut built).unwrap();
+        assert_eq!(built, data.as_ref());
     }
 
     #[test]
@@ -313,6 +337,9 @@ mod tests {
         assert_eq!(csrc.next(), None);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[]);
+        let mut built = vec![];
+        rtp.as_builder().write(&mut built).unwrap();
+        assert_eq!(built, data.as_ref());
     }
 
     #[test]
@@ -351,6 +378,9 @@ mod tests {
             Some((0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
         );
         assert_eq!(rtp.payload(), &[]);
+        let mut built = vec![];
+        rtp.as_builder().write(&mut built).unwrap();
+        assert_eq!(built, data.as_ref());
     }
 
     #[test]
@@ -401,6 +431,9 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
+        let mut built = vec![];
+        rtp.as_builder().write(&mut built).unwrap();
+        assert_eq!(built, data.as_ref());
     }
 
     #[test]
@@ -421,6 +454,9 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
+        let mut built = vec![];
+        rtp.as_builder().write(&mut built).unwrap();
+        assert_eq!(built, data.as_ref());
     }
 
     #[test]
