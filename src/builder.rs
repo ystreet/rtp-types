@@ -49,8 +49,6 @@ impl<'a> Default for RtpPacketBuilder<'a> {
 }
 
 impl<'a> RtpPacketBuilder<'a> {
-    const MAX_N_CSRCS: usize = 0xf;
-
     /// Construct a new packet builder
     pub fn new() -> RtpPacketBuilder<'a> {
         Self {
@@ -222,7 +220,7 @@ impl<'a> RtpPacketBuilder<'a> {
         if self.payload_type > 0x7f {
             return Err(RtpWriteError::InvalidPayloadType(self.payload_type));
         }
-        if self.csrcs.len() > Self::MAX_N_CSRCS {
+        if self.csrcs.len() > RtpPacket::MAX_N_CSRCS {
             return Err(RtpWriteError::TooManyContributionSources(self.csrcs.len()));
         }
 
