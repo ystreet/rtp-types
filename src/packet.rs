@@ -257,7 +257,7 @@ impl<'a> RtpPacket<'a> {
 
     /// Creates a builder that will be able to reconstruct this packet byte for byte (excluding
     /// any padding bytes).  Any aspect of the returned builder can be modified.
-    pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<'a> {
+    pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<&'a [u8], &'a [u8]> {
         let mut builder = crate::RtpPacketBuilder::new()
             .marker(self.marker())
             .payload_type(self.payload_type())
@@ -299,8 +299,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[]);
-        let mut built = vec![];
-        rtp.as_builder().write(&mut built).unwrap();
+        let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
 
@@ -338,8 +337,7 @@ mod tests {
         assert_eq!(csrc.next(), None);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[]);
-        let mut built = vec![];
-        rtp.as_builder().write(&mut built).unwrap();
+        let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
 
@@ -379,8 +377,7 @@ mod tests {
             Some((0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
         );
         assert_eq!(rtp.payload(), &[]);
-        let mut built = vec![];
-        rtp.as_builder().write(&mut built).unwrap();
+        let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
 
@@ -432,8 +429,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
-        let mut built = vec![];
-        rtp.as_builder().write(&mut built).unwrap();
+        let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
 
@@ -455,8 +451,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
-        let mut built = vec![];
-        rtp.as_builder().write(&mut built).unwrap();
+        let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
 
