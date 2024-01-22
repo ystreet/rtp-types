@@ -28,9 +28,9 @@ pub enum RtpWriteError {
 }
 
 /// Struct for building a new RTP packet
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[must_use = "The builder must be built to be used"]
-pub struct RtpPacketBuilder<'a> {
+pub struct RtpPacketBuilder<P: PayloadLength, E: PayloadLength> {
     padding: Option<u8>,
     csrcs: smallvec::SmallVec<[u32; 15]>,
     marker: bool,
@@ -38,19 +38,19 @@ pub struct RtpPacketBuilder<'a> {
     sequence_number: u16,
     timestamp: u32,
     ssrc: u32,
-    extension: Option<(u16, &'a [u8])>,
-    payloads: smallvec::SmallVec<[&'a [u8]; 16]>,
+    extension: Option<(u16, E)>,
+    payloads: smallvec::SmallVec<[P; 16]>,
 }
 
-impl<'a> Default for RtpPacketBuilder<'a> {
+impl<P: PayloadLength, E: PayloadLength> Default for RtpPacketBuilder<P, E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> RtpPacketBuilder<'a> {
+impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     /// Construct a new packet builder
-    pub fn new() -> RtpPacketBuilder<'a> {
+    pub fn new() -> RtpPacketBuilder<P, E> {
         Self {
             padding: None,
             csrcs: smallvec::smallvec![],
@@ -61,7 +61,7 @@ impl<'a> RtpPacketBuilder<'a> {
             timestamp: 0,
             ssrc: 0,
             extension: None,
-            payloads: smallvec::smallvec![],
+            payloads: smallvec::SmallVec::new(),
         }
     }
 
@@ -120,7 +120,7 @@ impl<'a> RtpPacketBuilder<'a> {
     }
 
     /// Set the extension header for this packet
-    pub fn extension(mut self, extension_id: u16, extension_data: &'a [u8]) -> Self {
+    pub fn extension(mut self, extension_id: u16, extension_data: E) -> Self {
         self.extension = Some((extension_id, extension_data));
         self
     }
@@ -135,7 +135,7 @@ impl<'a> RtpPacketBuilder<'a> {
     ///
     /// Can be called multiple times, in which case the payload data chunks will be
     /// concatenated when the final packet is created.
-    pub fn payload(mut self, payload: &'a [u8]) -> Self {
+    pub fn payload(mut self, payload: P) -> Self {
         self.payloads.push(payload);
         self
     }
@@ -149,7 +149,7 @@ impl<'a> RtpPacketBuilder<'a> {
     /// Calculate the size required for writing the packet.
     pub fn calculate_size(&self) -> Result<usize, RtpWriteError> {
         let payload_len = self.payloads.iter().map(|p| p.len()).sum::<usize>();
-        let extension_len = if let Some((_ext_id, ext_data)) = self.extension {
+        let extension_len = if let Some((_ext_id, ext_data)) = self.extension.as_ref() {
             if ext_data.len() > u16::MAX as usize {
                 return Err(RtpWriteError::PacketTooLarge);
             }
@@ -170,9 +170,7 @@ impl<'a> RtpPacketBuilder<'a> {
         Ok(size)
     }
 
-    /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
-    /// written.
-    pub fn write_into_unchecked(self, buf: &mut [u8]) -> usize {
+    fn write_header_into(&self, buf: &mut [u8]) -> usize {
         let mut byte = 0x80; // rtp version 2
         if self.padding.is_some() {
             byte |= 0x20;
@@ -202,45 +200,10 @@ impl<'a> RtpPacketBuilder<'a> {
         buf[10] = ((self.ssrc >> 8) & 0xff) as u8;
         buf[11] = (self.ssrc & 0xff) as u8;
 
-        let mut write_i = 12;
-
-        for csrc in self.csrcs {
-            buf[write_i] = (csrc >> 24) as u8;
-            buf[write_i + 1] = ((csrc >> 16) & 0xff) as u8;
-            buf[write_i + 2] = ((csrc >> 8) & 0xff) as u8;
-            buf[write_i + 3] = (csrc & 0xff) as u8;
-
-            write_i += 4;
-        }
-
-        if let Some((ext_id, ext_data)) = self.extension {
-            buf[write_i] = (ext_id >> 8) as u8;
-            buf[write_i + 1] = (ext_id & 0xff) as u8;
-            buf[write_i + 2] = (((ext_data.len() / 4) >> 8) & 0xff) as u8;
-            buf[write_i + 3] = ((ext_data.len() / 4) & 0xff) as u8;
-            write_i += 4;
-            if !ext_data.is_empty() {
-                buf[write_i..write_i + ext_data.len()].copy_from_slice(ext_data);
-                write_i += ext_data.len();
-            }
-        }
-
-        for payload in &self.payloads {
-            let payload_len = payload.len();
-            buf[write_i..write_i + payload_len].copy_from_slice(payload);
-            write_i += payload_len;
-        }
-
-        if let Some(padding) = self.padding {
-            buf[write_i..write_i + padding as usize - 1].fill(0);
-            buf[write_i + padding as usize - 1] = padding;
-            write_i += padding as usize;
-        }
-
-        write_i
+        RtpPacket::MIN_RTP_PACKET_LEN
     }
 
-    fn write_preconditions(&self) -> Result<(), RtpWriteError> {
+    fn write_preconditions(&self) -> Result<usize, RtpWriteError> {
         if self.payload_type > 0x7f {
             return Err(RtpWriteError::InvalidPayloadType(self.payload_type));
         }
@@ -254,93 +217,347 @@ impl<'a> RtpPacketBuilder<'a> {
             }
         }
 
-        Ok(())
+        self.calculate_size()
+    }
+
+    /// Write this packet using writer without any validity checks
+    pub fn write_unchecked<O>(
+        &self,
+        writer: &mut impl RtpPacketWriter<Payload = P, Extension = E, Output = O>,
+    ) -> O {
+        let mut hdr = [0; RtpPacket::MIN_RTP_PACKET_LEN];
+        self.write_header_into(&mut hdr);
+        writer.push(hdr.as_ref());
+
+        for csrc in self.csrcs.iter() {
+            writer.push(csrc.to_be_bytes().as_ref());
+        }
+
+        if let Some((ext_id, ext_data)) = self.extension.as_ref() {
+            writer.push(ext_id.to_be_bytes().as_ref());
+            writer.push(((ext_data.len() / 4) as u16).to_be_bytes().as_ref());
+            writer.push_extension(ext_data);
+        }
+
+        for payload in self.payloads.iter() {
+            writer.push_payload(payload);
+        }
+
+        if let Some(padding) = self.padding {
+            writer.padding(padding);
+        }
+
+        writer.finish()
+    }
+
+    /// Write the packet using writer.
+    pub fn write<O>(
+        &self,
+        writer: &mut impl RtpPacketWriter<Payload = P, Extension = E, Output = O>,
+    ) -> Result<O, RtpWriteError> {
+        let len = self.write_preconditions()?;
+        if let Some(max_size) = writer.max_size() {
+            if max_size < len {
+                return Err(RtpWriteError::OutputTooSmall(len));
+            }
+        }
+
+        writer.reserve(len);
+        Ok(self.write_unchecked(writer))
+    }
+}
+
+impl<'a> RtpPacketBuilder<&'a [u8], &'a [u8]> {
+    /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
+    /// written.
+    pub fn write_into_unchecked<'b: 'a>(&self, buf: &'b mut [u8]) -> usize {
+        let mut writer = RtpPacketWriterMutSlice::new(buf);
+        self.write_unchecked(&mut writer)
     }
 
     /// Write this packet into `buf`.  On success returns the number of bytes written or an
     /// `RtpWriteError` on failure.
-    pub fn write_into(self, buf: &mut [u8]) -> Result<usize, RtpWriteError> {
-        self.write_preconditions()?;
-
-        let size = self.calculate_size()?;
-        if size > buf.len() {
-            return Err(RtpWriteError::OutputTooSmall(size));
-        }
-
-        Ok(self.write_into_unchecked(buf))
+    pub fn write_into<'b: 'a>(&self, buf: &'b mut [u8]) -> Result<usize, RtpWriteError> {
+        let mut writer = RtpPacketWriterMutSlice::new(buf);
+        self.write(&mut writer)
     }
 
-    /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
-    /// written.
-    pub fn write_unchecked(self, buf: &mut Vec<u8>) -> usize {
-        let start_len = buf.len();
+    /// Write this packet into `buf` without any validity checks.  The data will be appended to the
+    /// end of the provide Vec.
+    pub fn write_into_vec_unchecked(&self, buf: &'a mut Vec<u8>) {
+        let mut writer = RtpPacketWriterMutVec::new(buf);
+        self.write_unchecked(&mut writer)
+    }
 
-        let mut byte = 0x80; // rtp version 2
-        if self.padding.is_some() {
-            byte |= 0x20;
+    /// Write this packet into `buf`.  The data will be appended to the end of the provide Vec.
+    pub fn write_into_vec(&self, buf: &'a mut Vec<u8>) -> Result<(), RtpWriteError> {
+        let mut writer = RtpPacketWriterMutVec::new(buf);
+        self.write(&mut writer)
+    }
+
+    /// Write this packet into a newly generated `Vec<u8>` without any validity checks.
+    pub fn write_vec_unchecked(&self) -> Vec<u8> {
+        let mut writer = RtpPacketWriterVec::default();
+        self.write_unchecked(&mut writer)
+    }
+
+    /// Write this packet into a newly generated `Vec<u8>`.
+    pub fn write_vec(&self) -> Result<Vec<u8>, RtpWriteError> {
+        let mut writer = RtpPacketWriterVec::default();
+        self.write(&mut writer)
+    }
+}
+
+/// Trait to provide the length of a piece of data in bytes
+pub trait PayloadLength {
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() != 0
+    }
+}
+
+/// Trait to write an RTP packet into and/or from custom data types
+pub trait RtpPacketWriter {
+    type Output;
+    type Payload: PayloadLength;
+    type Extension: PayloadLength;
+
+    /// Reserve a number of bytes in the output.  Multiple calls are possible and provide the
+    /// entire size to reserve
+    fn reserve(&mut self, _size: usize) {}
+
+    /// Return the maximum size of the output.  If the output data is not bound to a fixed size,
+    /// `None` should be returned.
+    fn max_size(&self) -> Option<usize> {
+        None
+    }
+
+    /// Provides data to append to the output.  May be called multiple times per packet.
+    fn push(&mut self, data: &[u8]);
+
+    /// Provides the extension data to add to the output.  The extension should be written as-is
+    /// without any transformations.
+    fn push_extension(&mut self, extension_data: &Self::Extension);
+
+    /// Provides the payload data to add to the output.  The payload should be written as-is
+    /// without any transformations
+    fn push_payload(&mut self, payload: &Self::Payload);
+
+    /// Provides any padding value the builder was constructed with.  The padding value specifies
+    /// the number of bytes of zeroes of padding at the end to write.  The last byte of padding
+    /// must be set to the padding count.  e.g.
+    ///
+    /// `[..., 0, 0, 0, 4]`
+    fn padding(&mut self, size: u8);
+
+    /// Finishes and returns the built RTP packet.  The implementation should reset internal state
+    /// so that a new packet can be created after `finish` is called.
+    fn finish(&mut self) -> Self::Output;
+}
+
+impl<T> PayloadLength for &[T] {
+    fn len(&self) -> usize {
+        (self as &[T]).len()
+    }
+}
+
+impl<T> PayloadLength for Vec<T> {
+    fn len(&self) -> usize {
+        (self as &Vec<T>).len()
+    }
+}
+
+impl<T, const N: usize> PayloadLength for [T; N] {
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+}
+
+impl<T, const N: usize> PayloadLength for &[T; N] {
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+}
+
+/// An implementation of a [`RtpPacketWriter`] that appends to a `Vec<u8>`
+#[derive(Default, Debug)]
+pub struct RtpPacketWriterVec<'a> {
+    output: Vec<u8>,
+    padding: Option<u8>,
+    phantom: std::marker::PhantomData<&'a [u8]>,
+}
+
+impl<'a> RtpPacketWriter for RtpPacketWriterVec<'a> {
+    type Output = Vec<u8>;
+    type Payload = &'a [u8];
+    type Extension = &'a [u8];
+
+    fn reserve(&mut self, size: usize) {
+        if self.output.len() < size {
+            self.output.reserve(size - self.output.len());
         }
-        if self.extension.is_some() {
-            byte |= 0x10;
+    }
+
+    fn push(&mut self, data: &[u8]) {
+        self.output.extend_from_slice(data)
+    }
+
+    fn push_extension(&mut self, extension_data: &Self::Extension) {
+        self.push(extension_data)
+    }
+
+    fn push_payload(&mut self, data: &Self::Payload) {
+        self.push(data)
+    }
+
+    fn padding(&mut self, size: u8) {
+        self.padding = Some(size);
+    }
+
+    fn finish(&mut self) -> Self::Output {
+        let mut ret = vec![];
+        if let Some(padding) = self.padding.take() {
+            self.output
+                .resize(self.output.len() + padding as usize - 1, 0);
+            self.output.push(padding);
         }
-        byte |= (self.csrcs.len() as u8) & 0x0f;
-        buf.push(byte);
+        std::mem::swap(&mut ret, &mut self.output);
+        ret
+    }
+}
 
-        let mut byte = self.payload_type & 0x7f;
-        if self.marker {
-            byte |= 0x80;
+/// An implementation of a [`RtpPacketWriter`] that writes to a `&mut [u8]`.  Each packet will be
+/// written starting at the beginning of the provided slice.
+#[derive(Default, Debug)]
+pub struct RtpPacketWriterMutSlice<'a> {
+    output: &'a mut [u8],
+    padding: Option<u8>,
+    write_i: usize,
+}
+
+impl<'a> RtpPacketWriterMutSlice<'a> {
+    pub fn new(buf: &'a mut [u8]) -> Self {
+        Self {
+            output: buf,
+            padding: None,
+            write_i: 0,
         }
-        buf.push(byte);
+    }
+}
 
-        buf.push((self.sequence_number >> 8) as u8);
-        buf.push((self.sequence_number & 0xff) as u8);
+impl<'a> std::ops::Deref for RtpPacketWriterMutSlice<'a> {
+    type Target = [u8];
 
-        buf.push((self.timestamp >> 24) as u8);
-        buf.push(((self.timestamp >> 16) & 0xff) as u8);
-        buf.push(((self.timestamp >> 8) & 0xff) as u8);
-        buf.push((self.timestamp & 0xff) as u8);
+    fn deref(&self) -> &Self::Target {
+        self.output
+    }
+}
 
-        buf.push((self.ssrc >> 24) as u8);
-        buf.push(((self.ssrc >> 16) & 0xff) as u8);
-        buf.push(((self.ssrc >> 8) & 0xff) as u8);
-        buf.push((self.ssrc & 0xff) as u8);
+impl<'a> std::ops::DerefMut for RtpPacketWriterMutSlice<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.output
+    }
+}
 
-        for csrc in self.csrcs {
-            buf.push((csrc >> 24) as u8);
-            buf.push(((csrc >> 16) & 0xff) as u8);
-            buf.push(((csrc >> 8) & 0xff) as u8);
-            buf.push((csrc & 0xff) as u8);
-        }
+impl<'a> RtpPacketWriter for RtpPacketWriterMutSlice<'a> {
+    type Output = usize;
+    type Payload = &'a [u8];
+    type Extension = &'a [u8];
 
-        if let Some((ext_id, ext_data)) = self.extension {
-            buf.push((ext_id >> 8) as u8);
-            buf.push((ext_id & 0xff) as u8);
-            buf.push((((ext_data.len() / 4) >> 8) & 0xff) as u8);
-            buf.push(((ext_data.len() / 4) & 0xff) as u8);
-            if !ext_data.is_empty() {
-                buf.extend(ext_data);
+    fn max_size(&self) -> Option<usize> {
+        Some(self.output.len())
+    }
+
+    fn push(&mut self, data: &[u8]) {
+        self.output[self.write_i..self.write_i + data.len()].copy_from_slice(data);
+        self.write_i += data.len();
+    }
+
+    fn push_extension(&mut self, extension_data: &Self::Extension) {
+        self.push(extension_data)
+    }
+
+    fn push_payload(&mut self, data: &Self::Payload) {
+        self.push(data)
+    }
+
+    fn padding(&mut self, size: u8) {
+        self.padding = Some(size);
+    }
+
+    fn finish(&mut self) -> Self::Output {
+        if let Some(padding) = self.padding.take() {
+            if padding > 1 {
+                self.output[self.write_i..self.write_i + padding as usize - 1].fill(0);
             }
+            self.write_i += padding as usize;
+            self.output[self.write_i - 1] = padding;
         }
+        let ret = self.write_i;
+        self.write_i = 0;
+        ret
+    }
+}
 
-        for &payload in &self.payloads {
-            buf.extend(payload);
+/// An implementation of a [`RtpPacketWriter`] that writes to a `&mut Vec<u8>`.  Each packet
+/// written will be appended to the provide `Vec<u8>`.  You can `clear()` the vec in between packets
+/// to have each packet written from the beginning of the vec.
+#[derive(Debug)]
+pub struct RtpPacketWriterMutVec<'a> {
+    output: &'a mut Vec<u8>,
+    padding: Option<u8>,
+}
+
+impl<'a> RtpPacketWriterMutVec<'a> {
+    pub fn new(buf: &'a mut Vec<u8>) -> Self {
+        Self {
+            output: buf,
+            padding: None,
         }
+    }
+}
 
-        if let Some(padding) = self.padding {
-            buf.extend(std::iter::repeat(0).take(padding as usize - 1));
-            buf.push(padding);
-        }
+impl<'a> std::ops::Deref for RtpPacketWriterMutVec<'a> {
+    type Target = Vec<u8>;
 
-        buf.len() - start_len
+    fn deref(&self) -> &Self::Target {
+        self.output
+    }
+}
+
+impl<'a> std::ops::DerefMut for RtpPacketWriterMutVec<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.output
+    }
+}
+
+impl<'a> RtpPacketWriter for RtpPacketWriterMutVec<'a> {
+    type Output = ();
+    type Payload = &'a [u8];
+    type Extension = &'a [u8];
+
+    fn push(&mut self, data: &[u8]) {
+        self.output.extend(data);
     }
 
-    /// Write the packet into `buf` appending to any data that already exists.
-    /// Returns the number of bytes written.
-    pub fn write(self, buf: &mut Vec<u8>) -> Result<usize, RtpWriteError> {
-        self.write_preconditions()?;
-        let len = self.calculate_size()?;
+    fn push_extension(&mut self, extension_data: &Self::Extension) {
+        self.push(extension_data)
+    }
 
-        buf.reserve(len);
-        Ok(self.write_unchecked(buf))
+    fn push_payload(&mut self, data: &Self::Payload) {
+        self.push(data)
+    }
+
+    fn padding(&mut self, size: u8) {
+        self.padding = Some(size);
+    }
+
+    fn finish(&mut self) -> Self::Output {
+        if let Some(padding) = self.padding.take() {
+            self.output
+                .extend(std::iter::repeat(0).take(padding as usize - 1));
+            self.output.push(padding);
+        }
     }
 }
 
@@ -351,13 +568,16 @@ mod tests {
     #[test]
     fn write_rtp_default() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new().payload_type(96);
-        let size = builder.clone().write_into(&mut data).unwrap();
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.version(), 2);
@@ -377,6 +597,7 @@ mod tests {
     #[test]
     fn write_rtp_header() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
             .marker(true)
@@ -384,12 +605,14 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e);
-        let size = builder.clone().write_into(&mut data).unwrap();
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.version(), 2);
@@ -411,16 +634,19 @@ mod tests {
     #[test]
     fn write_rtp_header_multiple_csrcs() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
             .add_csrc(0x01020304)
             .add_csrc(0x05060708);
-        let size = builder.clone().write_into(&mut data).unwrap();
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.n_csrcs(), 2);
@@ -434,20 +660,23 @@ mod tests {
     #[test]
     fn write_rtp_multiple_payloads() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let more_payload_data = [9, 10, 11];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .payload(&payload_data)
-            .payload(&more_payload_data)
-            .payload(&more_payload_data[0..1]);
-        let size = builder.clone().write_into(&mut data).unwrap();
+            .payload(payload_data.as_ref())
+            .payload(more_payload_data.as_ref())
+            .payload(more_payload_data[0..1].as_ref());
+        let size = builder.write_into(&mut data).unwrap();
         assert_eq!(size, 24);
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.version(), 2);
@@ -459,6 +688,7 @@ mod tests {
     #[test]
     fn write_rtp_extension() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
@@ -467,13 +697,15 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, &extension_data);
-        let size = builder.clone().write_into(&mut data).unwrap();
+            .extension(0x9876, extension_data.as_ref());
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.version(), 2);
@@ -495,6 +727,7 @@ mod tests {
     #[test]
     fn write_rtp_extension_payload_padding() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
@@ -504,15 +737,17 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, &extension_data)
-            .payload(&payload_data)
+            .extension(0x9876, extension_data.as_ref())
+            .payload(payload_data.as_ref())
             .padding(7);
-        let size = builder.clone().write_into(&mut data).unwrap();
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        builder.write_into_vec(&mut vec).unwrap();
+        drop(builder);
         let data = &data[..size];
-        let mut buf = vec![];
-        let size_owned = builder.write(&mut buf).unwrap();
-        assert_eq!(size, size_owned);
-        for data in [data, buf.as_ref()] {
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
             println!("{data:?}");
             let rtp = RtpPacket::parse(data).unwrap();
             assert_eq!(rtp.version(), 2);
@@ -534,28 +769,36 @@ mod tests {
     #[test]
     fn write_rtp_invalid_padding() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new().payload_type(96).padding(0);
         assert_eq!(
-            builder.clone().write_into(&mut data),
+            builder.write_into(&mut data),
             Err(RtpWriteError::InvalidPadding)
         );
-        let mut data = vec![];
-        assert_eq!(builder.write(&mut data), Err(RtpWriteError::InvalidPadding));
+        assert_eq!(builder.write_vec(), Err(RtpWriteError::InvalidPadding));
+        assert_eq!(
+            builder.write_into_vec(&mut vec),
+            Err(RtpWriteError::InvalidPadding)
+        );
     }
 
     #[test]
     fn write_rtp_unpadded_extension() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .extension(0x9876, &[1]);
+            .extension(0x9876, [1].as_ref());
         assert_eq!(
-            builder.clone().write_into(&mut data),
+            builder.write_into(&mut data),
             Err(RtpWriteError::ExtensionDataNotPadded)
         );
-        let mut data = vec![];
         assert_eq!(
-            builder.clone().write(&mut data),
+            builder.write_vec(),
+            Err(RtpWriteError::ExtensionDataNotPadded)
+        );
+        assert_eq!(
+            builder.write_into_vec(&mut vec),
             Err(RtpWriteError::ExtensionDataNotPadded)
         );
     }
@@ -563,14 +806,18 @@ mod tests {
     #[test]
     fn write_rtp_invalid_payload_type() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new().payload_type(0xFF);
         assert_eq!(
-            builder.clone().write_into(&mut data),
+            builder.write_into(&mut data),
             Err(RtpWriteError::InvalidPayloadType(0xFF))
         );
-        let mut data = vec![];
         assert_eq!(
-            builder.write(&mut data),
+            builder.write_vec(),
+            Err(RtpWriteError::InvalidPayloadType(0xFF))
+        );
+        assert_eq!(
+            builder.write_into_vec(&mut vec),
             Err(RtpWriteError::InvalidPayloadType(0xFF))
         );
     }
@@ -578,6 +825,7 @@ mod tests {
     #[test]
     fn write_rtp_too_many_contributions() {
         let mut data = [0; 128];
+        let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
             .add_csrc(1)
@@ -597,12 +845,15 @@ mod tests {
             .add_csrc(15)
             .add_csrc(16);
         assert_eq!(
-            builder.clone().write_into(&mut data),
+            builder.write_into(&mut data),
             Err(RtpWriteError::TooManyContributionSources(16))
         );
-        let mut data = vec![];
         assert_eq!(
-            builder.write(&mut data),
+            builder.write_vec(),
+            Err(RtpWriteError::TooManyContributionSources(16))
+        );
+        assert_eq!(
+            builder.write_into_vec(&mut vec),
             Err(RtpWriteError::TooManyContributionSources(16))
         );
     }
@@ -610,16 +861,20 @@ mod tests {
     #[test]
     fn write_rtp_extension_too_large() {
         let mut data = [0; u16::MAX as usize + 128];
+        let mut vec = vec![];
         let extension_data = [0; u16::MAX as usize + 1];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .extension(0x9876, &extension_data);
+            .extension(0x9876, extension_data.as_ref());
         assert_eq!(
-            builder.clone().write_into(&mut data),
+            builder.write_into(&mut data),
             Err(RtpWriteError::PacketTooLarge)
         );
-        let mut data = vec![];
-        assert_eq!(builder.write(&mut data), Err(RtpWriteError::PacketTooLarge));
+        assert_eq!(builder.write_vec(), Err(RtpWriteError::PacketTooLarge));
+        assert_eq!(
+            builder.write_into_vec(&mut vec),
+            Err(RtpWriteError::PacketTooLarge)
+        );
     }
 
     #[test]
@@ -651,7 +906,7 @@ mod tests {
         assert_eq!(
             RtpPacketBuilder::new()
                 .payload_type(96)
-                .extension(0x9876, &[])
+                .extension(0x9876, [].as_ref())
                 .write_into(&mut data),
             Err(RtpWriteError::OutputTooSmall(16))
         );
@@ -675,9 +930,138 @@ mod tests {
         assert_eq!(
             RtpPacketBuilder::new()
                 .payload_type(96)
-                .payload(&[1])
+                .payload([1].as_ref())
                 .write_into(&mut data),
             Err(RtpWriteError::OutputTooSmall(13))
         );
+    }
+
+    #[derive(Debug)]
+    struct TestPayload(Vec<u8>);
+
+    impl PayloadLength for TestPayload {
+        fn len(&self) -> usize {
+            self.0.len()
+        }
+    }
+
+    #[derive(Default, Debug)]
+    struct TestRtpWriterCustomPayload {
+        output: Option<Vec<u8>>,
+        padding: Option<u8>,
+    }
+
+    impl RtpPacketWriter for TestRtpWriterCustomPayload {
+        type Output = Vec<u8>;
+        type Payload = TestPayload;
+        type Extension = TestPayload;
+
+        fn reserve(&mut self, size: usize) {
+            if let Some(output) = self.output.as_mut() {
+                if output.len() < size {
+                    output.reserve(size - output.len());
+                }
+            } else {
+                self.output = Some(Vec::with_capacity(size));
+            }
+        }
+
+        fn push(&mut self, data: &[u8]) {
+            let p = self
+                .output
+                .get_or_insert_with(|| Vec::with_capacity(data.len()));
+            p.extend_from_slice(data)
+        }
+
+        fn push_payload(&mut self, payload: &Self::Payload) {
+            self.push(&payload.0)
+        }
+
+        fn push_extension(&mut self, extension_data: &Self::Extension) {
+            self.push(&extension_data.0)
+        }
+
+        fn padding(&mut self, size: u8) {
+            self.padding = Some(size);
+        }
+
+        fn finish(&mut self) -> Self::Output {
+            self.output
+                .take()
+                .map(|mut output| {
+                    if let Some(padding) = self.padding.take() {
+                        output.extend(std::iter::repeat(0).take(padding as usize - 1));
+                        output.push(padding);
+                    }
+                    output
+                })
+                .unwrap_or_default()
+        }
+    }
+
+    #[test]
+    fn write_rtp_custom_payload() {
+        let extension_data = TestPayload(vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        let payload_data = TestPayload(vec![11, 12, 13, 14, 15, 16, 17, 18]);
+        let builder = RtpPacketBuilder::new()
+            .payload_type(96)
+            .marker(true)
+            .sequence_number(0x0102)
+            .timestamp(0x03040506)
+            .ssrc(0x0708090a)
+            .add_csrc(0x0b0c0d0e)
+            .extension(0x9876, TestPayload(extension_data.0.clone()))
+            .payload(TestPayload(payload_data.0.clone()))
+            .padding(7);
+        let mut writer = TestRtpWriterCustomPayload::default();
+        let buf = builder.write(&mut writer).unwrap();
+        drop(builder);
+        let data = buf.as_ref();
+        println!("{data:?}");
+        let rtp = RtpPacket::parse(data).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.padding(), Some(7));
+        assert_eq!(rtp.n_csrcs(), 1);
+        assert!(rtp.marker());
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.sequence_number(), 0x0102);
+        assert_eq!(rtp.timestamp(), 0x03040506);
+        assert_eq!(rtp.ssrc(), 0x0708090a);
+        let mut csrc = rtp.csrc();
+        assert_eq!(csrc.next(), Some(0x0b0c0d0e));
+        assert_eq!(csrc.next(), None);
+        let (ext_id, ext_data) = rtp.extension().unwrap();
+        assert_eq!(ext_id, 0x9876);
+        assert_eq!(ext_data, extension_data.0);
+        assert_eq!(rtp.payload(), payload_data.0);
+    }
+
+    #[test]
+    fn write_rtp_vec_with_clear() {
+        let mut vec = vec![];
+        let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
+        let builder = RtpPacketBuilder::new()
+            .payload_type(96)
+            .payload(payload_data.as_ref());
+        let mut writer = RtpPacketWriterMutVec::new(&mut vec);
+        builder.write(&mut writer).unwrap();
+        assert_eq!(writer.len(), 20);
+        let data = writer.as_ref();
+        println!("{data:?}");
+        let rtp = RtpPacket::parse(data).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.payload(), payload_data);
+        writer.clear();
+        let payload2 = [9, 10, 11];
+        let builder = builder.clear_payloads().payload(payload2.as_ref());
+        builder.write(&mut writer).unwrap();
+        assert_eq!(writer.len(), 15);
+        let data = writer.as_ref();
+        println!("{data:?}");
+        let rtp = RtpPacket::parse(data).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.payload(), payload2);
     }
 }
