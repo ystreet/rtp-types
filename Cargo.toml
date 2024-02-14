@@ -9,7 +9,7 @@ keywords = ["RTP"]
 categories = ["network-programming", "encoding", "multimedia", "parsing", "multimedia::encoding"]
 documentation = "https://docs.rs/rtp-types"
 repository = "https://github.com/ystreet/rtp-types"
-rust-version = '1.58.0'
+rust-version = '1.57.0'
 
 [dependencies]
 smallvec = { version = "1", features = ["union"] }
