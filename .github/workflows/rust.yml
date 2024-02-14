@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: ['1.58', stable]
+        toolchain: ['1.57', stable]
 
     steps:
     - uses: actions/checkout@v2
@@ -28,10 +28,18 @@ jobs:
         override: true
     - name: Use MSRV Cargo.lock
       run: cp Cargo.lock.msrv Cargo.lock
-      if: matrix.toolchain == '1.58'
+      if: matrix.toolchain == '1.57'
     - name: Build
       run: cargo build --verbose
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
     - name: Run tests
       run: cargo test --verbose
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
     - name: clippy
       run: cargo clippy --verbose
