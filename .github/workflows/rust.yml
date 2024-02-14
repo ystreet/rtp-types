@@ -14,8 +14,21 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        toolchain: ['1.58', stable]
+
     steps:
     - uses: actions/checkout@v2
+    - name: Install ${{ matrix.toolchain }}
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+    - name: Use MSRV Cargo.lock
+      run: cp Cargo.lock.msrv Cargo.lock
+      if: matrix.toolchain == '1.58'
     - name: Build
       run: cargo build --verbose
     - name: Run tests
