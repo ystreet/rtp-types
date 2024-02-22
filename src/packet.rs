@@ -247,6 +247,14 @@ impl<'a> RtpPacket<'a> {
             }
     }
 
+    /// Returns the length of the payload in this packet without padding.
+    pub fn payload_len(&self) -> usize {
+        let offset = self.payload_offset();
+        let pad = self.padding().unwrap_or_default() as usize;
+
+        self.data.len() - pad - offset
+    }
+
     /// Returns the payload data
     pub fn payload(&self) -> &[u8] {
         let offset = self.payload_offset();
