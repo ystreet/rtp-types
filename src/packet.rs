@@ -210,7 +210,7 @@ impl<'a> RtpPacket<'a> {
             })
     }
 
-    fn extension_offset(&self) -> usize {
+    pub(crate) fn extension_offset(&self) -> usize {
         Self::MIN_RTP_PACKET_LEN + (self.n_csrcs() as usize) * 4
     }
 
