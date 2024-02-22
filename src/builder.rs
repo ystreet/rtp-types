@@ -27,7 +27,7 @@ pub enum RtpWriteError {
     InvalidPadding,
 }
 
-/// Struct for building a new RTP packet
+/// Struct for building a new RTP packet.
 #[derive(Debug)]
 #[must_use = "The builder must be built to be used"]
 pub struct RtpPacketBuilder<P: PayloadLength, E: PayloadLength> {
@@ -49,7 +49,7 @@ impl<P: PayloadLength, E: PayloadLength> Default for RtpPacketBuilder<P, E> {
 }
 
 impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
-    /// Construct a new packet builder
+    /// Construct a new packet builder.
     pub fn new() -> RtpPacketBuilder<P, E> {
         Self {
             padding: None,
@@ -65,67 +65,67 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
         }
     }
 
-    /// Set the number of padding bytes to use for this packet
+    /// Set the number of padding bytes to use for this packet.
     pub fn padding(mut self, padding: u8) -> Self {
         self.padding = Some(padding);
         self
     }
 
-    /// Set 1. whether padding is used and 2. the number of padding bytes to use for this packet
+    /// Set 1. whether padding is used and 2. the number of padding bytes to use for this packet.
     pub fn maybe_padding(mut self, padding: Option<u8>) -> Self {
         self.padding = padding;
         self
     }
 
-    /// Add a Contribution Source for this packet
+    /// Add a Contribution Source for this packet.
     pub fn add_csrc(mut self, csrc: u32) -> Self {
         self.csrcs.push(csrc);
         self
     }
 
-    /// Clear any CSRCs configured for this packet
+    /// Clear any CSRCs configured for this packet.
     pub fn clear_csrcs(mut self) -> Self {
         self.csrcs.clear();
         self
     }
 
-    /// Set the marker bit for this packet
+    /// Set the marker bit for this packet.
     pub fn marker(mut self, marker: bool) -> Self {
         self.marker = marker;
         self
     }
 
-    /// Set the payload type for this packet
+    /// Set the payload type for this packet.
     pub fn payload_type(mut self, pt: u8) -> Self {
         self.payload_type = pt;
         self
     }
 
-    /// Set the sequence number for this packet
+    /// Set the sequence number for this packet.
     pub fn sequence_number(mut self, sequence: u16) -> Self {
         self.sequence_number = sequence;
         self
     }
 
-    /// Set the RTP timestamp for this packet
+    /// Set the RTP timestamp for this packet.
     pub fn timestamp(mut self, timestamp: u32) -> Self {
         self.timestamp = timestamp;
         self
     }
 
-    /// Set the Sequence source for this packet
+    /// Set the Sequence source for this packet.
     pub fn ssrc(mut self, ssrc: u32) -> Self {
         self.ssrc = ssrc;
         self
     }
 
-    /// Set the extension header for this packet
+    /// Set the extension header for this packet.
     pub fn extension(mut self, extension_id: u16, extension_data: E) -> Self {
         self.extension = Some((extension_id, extension_data));
         self
     }
 
-    /// Clear any extension data configured for this packet
+    /// Clear any extension data configured for this packet.
     pub fn clear_extension(mut self) -> Self {
         self.extension = None;
         self
@@ -140,7 +140,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
         self
     }
 
-    /// Clear any payloads currently configured
+    /// Clear any payloads currently configured.
     pub fn clear_payloads(mut self) -> Self {
         self.payloads.clear();
         self
@@ -220,7 +220,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
         self.calculate_size()
     }
 
-    /// Write this packet using writer without any validity checks
+    /// Write this packet using writer without any validity checks.
     pub fn write_unchecked<O>(
         &self,
         writer: &mut impl RtpPacketWriter<Payload = P, Extension = E, Output = O>,
@@ -308,7 +308,7 @@ impl<'a> RtpPacketBuilder<&'a [u8], &'a [u8]> {
     }
 }
 
-/// Trait to provide the length of a piece of data in bytes
+/// Trait to provide the length of a piece of data in bytes.
 pub trait PayloadLength {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -316,14 +316,14 @@ pub trait PayloadLength {
     }
 }
 
-/// Trait to write an RTP packet into and/or from custom data types
+/// Trait to write an RTP packet into and/or from custom data types.
 pub trait RtpPacketWriter {
     type Output;
     type Payload: PayloadLength;
     type Extension: PayloadLength;
 
     /// Reserve a number of bytes in the output.  Multiple calls are possible and provide the
-    /// entire size to reserve
+    /// entire size to reserve.
     fn reserve(&mut self, _size: usize) {}
 
     /// Return the maximum size of the output.  If the output data is not bound to a fixed size,
@@ -340,7 +340,7 @@ pub trait RtpPacketWriter {
     fn push_extension(&mut self, extension_data: &Self::Extension);
 
     /// Provides the payload data to add to the output.  The payload should be written as-is
-    /// without any transformations
+    /// without any transformations.
     fn push_payload(&mut self, payload: &Self::Payload);
 
     /// Provides any padding value the builder was constructed with.  The padding value specifies
@@ -379,7 +379,7 @@ impl<T, const N: usize> PayloadLength for &[T; N] {
     }
 }
 
-/// An implementation of a [`RtpPacketWriter`] that appends to a `Vec<u8>`
+/// An implementation of a [`RtpPacketWriter`] that appends to a `Vec<u8>`.
 #[derive(Default, Debug)]
 pub struct RtpPacketWriterVec<'a> {
     output: Vec<u8>,
