@@ -258,11 +258,7 @@ impl<'a> RtpPacket<'a> {
     /// Returns the payload data
     pub fn payload(&self) -> &[u8] {
         let offset = self.payload_offset();
-        let pad = if let Some(pad) = self.padding() {
-            pad as usize
-        } else {
-            0
-        };
+        let pad = self.padding().unwrap_or_default() as usize;
         &self.data[offset..self.data.len() - pad]
     }
 
