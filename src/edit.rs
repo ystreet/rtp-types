@@ -70,6 +70,37 @@ impl<'a> RtpPacketMut<'a> {
         self.data[10] = ((ssrc >> 8) & 0xff) as u8;
         self.data[11] = (ssrc & 0xff) as u8;
     }
+
+    /// Change the extension identifier of this packet.
+    ///
+    /// This has no effect if the packet does not contain any extension data.
+    pub fn set_extension_id(&mut self, id: u16) {
+        if self.extension_bit() {
+            let offset = self.extension_offset();
+            self.data[offset] = (id >> 8) as u8;
+            self.data[offset + 1] = (id & 0xff) as u8;
+        }
+    }
+
+    /// Returns a mutable reference to the extension data for this packet, if any.
+    pub fn extension_mut(&mut self) -> Option<&mut [u8]> {
+        if self.extension_bit() {
+            let offset = self.extension_offset();
+            let offset = offset + 4;
+            let len = self.extension_len();
+            Some(&mut self.data[offset..][..len])
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the payload data of this packet.
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let offset = self.payload_offset();
+        let pad = self.padding().unwrap_or_default() as usize;
+        let data_len = self.data.len();
+        &mut self.data[offset..data_len - pad]
+    }
 }
 
 #[cfg(test)]
