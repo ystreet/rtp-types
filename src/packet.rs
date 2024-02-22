@@ -231,7 +231,7 @@ impl<'a> RtpPacket<'a> {
             let offset = self.extension_offset();
             let id = (self.data[offset] as u16) << 8 | self.data[offset + 1] as u16;
             let offset = offset + 4;
-            Some((id, &self.data[offset..offset + self.extension_len()]))
+            Some((id, &self.data[offset..][..self.extension_len()]))
         } else {
             None
         }
