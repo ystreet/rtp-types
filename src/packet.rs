@@ -2,26 +2,26 @@
 
 use std::fmt;
 
-/// An error produced when parsing a packet
+/// An error produced when parsing a packet.
 #[derive(Debug, thiserror::Error)]
 pub enum RtpParseError {
-    /// Version is unsupported.  This implementation only supports version 2
+    /// Version is unsupported.  This implementation only supports version 2.
     #[error("Unsupported RTP version {}", .0)]
     UnsupportedVersion(u8),
     /// There is not enough data available to successfully parse the packet
     #[error("Not enough data available to parse the packet: expected {}, actual {}", .expected, .actual)]
     Truncated {
-        /// The expected size
+        /// The expected size.
         expected: usize,
-        /// The actual size encountered
+        /// The actual size encountered.
         actual: usize,
     },
-    /// The padding byte does not contain a valid value
+    /// The padding byte does not contain a valid value.
     #[error("Padding contains invalid value {}", .0)]
     PaddingInvalid(u8),
 }
 
-/// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed
+/// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed.
 #[repr(transparent)]
 pub struct RtpPacket<'a> {
     data: &'a [u8],
@@ -59,10 +59,10 @@ impl<'a> fmt::Debug for RtpPacket<'a> {
 }
 
 impl<'a> RtpPacket<'a> {
-    /// The minimum number of bytes a RTP packet must be to be parsed correctly
+    /// The minimum number of bytes a RTP packet must be to be parsed correctly.
     pub const MIN_RTP_PACKET_LEN: usize = 12;
 
-    /// The maximum number of CSRCs a RTP packet can contain
+    /// The maximum number of CSRCs a RTP packet can contain.
     pub const MAX_N_CSRCS: usize = 0xf;
 
     /// Parse a byte slice into a [`RtpPacket`].  This implementation prefers to fail fast and will
@@ -145,7 +145,7 @@ impl<'a> RtpPacket<'a> {
         self.data[0] & 0b0010_0000 != 0
     }
 
-    /// Returns the number of bytes of padding used by this packet or `None`
+    /// Returns the number of bytes of padding used by this packet or `None`.
     pub fn padding(&self) -> Option<u8> {
         if self.padding_bit() {
             Some(self.data[self.data.len() - 1])
@@ -166,7 +166,7 @@ impl<'a> RtpPacket<'a> {
     }
 
     /// Returns whether the marker bit is set for this packet.  The meaning of the marker bit
-    /// is payload-specific
+    /// is payload-specific.
     pub fn marker(&self) -> bool {
         (self.data[1] & 0b1000_0000) != 0
     }
@@ -176,7 +176,7 @@ impl<'a> RtpPacket<'a> {
         self.data[1] & 0b0111_1111
     }
 
-    /// Returns the sequence number for this packet
+    /// Returns the sequence number for this packet.
     pub fn sequence_number(&self) -> u16 {
         (self.data[2] as u16) << 8 | self.data[3] as u16
     }
@@ -189,7 +189,7 @@ impl<'a> RtpPacket<'a> {
             | (self.data[7] as u32)
     }
 
-    /// Returns the Sychronisation Source for this packet
+    /// Returns the Sychronisation Source for this packet.
     pub fn ssrc(&self) -> u32 {
         (self.data[8] as u32) << 24
             | (self.data[9] as u32) << 16
@@ -197,7 +197,7 @@ impl<'a> RtpPacket<'a> {
             | (self.data[11] as u32)
     }
 
-    /// Returns a (potentially empty) iterator over the Contribution Sources for this packet
+    /// Returns a (potentially empty) iterator over the Contribution Sources for this packet.
     pub fn csrc(&self) -> impl Iterator<Item = u32> + '_ {
         self.data[Self::MIN_RTP_PACKET_LEN..]
             .chunks_exact(4)
@@ -255,7 +255,7 @@ impl<'a> RtpPacket<'a> {
         self.data.len() - pad - offset
     }
 
-    /// Returns the payload data
+    /// Returns the payload data.
     pub fn payload(&self) -> &[u8] {
         let offset = self.payload_offset();
         let pad = self.padding().unwrap_or_default() as usize;

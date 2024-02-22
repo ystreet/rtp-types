@@ -2,7 +2,7 @@
 
 use crate::{RtpPacket, RtpParseError, RtpWriteError};
 
-/// Packet editing
+/// Mutable parsed RTP packet for editing of some fields.
 #[repr(transparent)]
 pub struct RtpPacketMut<'a> {
     data: &'a mut [u8],
@@ -18,7 +18,7 @@ impl<'a> std::ops::Deref for RtpPacketMut<'a> {
 }
 
 impl<'a> RtpPacketMut<'a> {
-    /// The minimum number of bytes a RTP packet must be to be parsed correctly
+    /// The minimum number of bytes a RTP packet must be to be parsed correctly.
     pub const MIN_RTP_PACKET_LEN: usize = RtpPacket::MIN_RTP_PACKET_LEN;
 
     /// Parse a byte slice into an editable [`RtpPacketMut`].  The packet is first parsed using
@@ -29,7 +29,7 @@ impl<'a> RtpPacketMut<'a> {
         Ok(RtpPacketMut { data })
     }
 
-    /// Change the marker bit of this packet
+    /// Change the marker bit of this packet.
     pub fn set_marker(&mut self, marker: bool) {
         if marker {
             self.data[1] |= 0x80;
@@ -38,7 +38,7 @@ impl<'a> RtpPacketMut<'a> {
         }
     }
 
-    /// Change the payload type of this packet
+    /// Change the payload type of this packet.
     pub fn set_payload_type(&mut self, pt: u8) -> Result<(), RtpWriteError> {
         if pt > 0x7f {
             return Err(RtpWriteError::InvalidPayloadType(pt));
@@ -49,13 +49,13 @@ impl<'a> RtpPacketMut<'a> {
         Ok(())
     }
 
-    /// Change the sequence number of this packet
+    /// Change the sequence number of this packet.
     pub fn set_sequence_number(&mut self, sequence: u16) {
         self.data[2] = (sequence >> 8) as u8;
         self.data[3] = (sequence & 0xff) as u8;
     }
 
-    /// Change the timestamp of this packet
+    /// Change the timestamp of this packet.
     pub fn set_timestamp(&mut self, timestamp: u32) {
         self.data[4] = (timestamp >> 24) as u8;
         self.data[5] = ((timestamp >> 16) & 0xff) as u8;
@@ -63,7 +63,7 @@ impl<'a> RtpPacketMut<'a> {
         self.data[7] = (timestamp & 0xff) as u8;
     }
 
-    /// Change the SSRC of this packet
+    /// Change the SSRC of this packet.
     pub fn set_ssrc(&mut self, ssrc: u32) {
         self.data[8] = (ssrc >> 24) as u8;
         self.data[9] = ((ssrc >> 16) & 0xff) as u8;
