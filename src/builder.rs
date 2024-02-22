@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::marker::PhantomData;
+
 use crate::RtpPacket;
 
 /// Errors produced when wrting a packet
@@ -267,30 +269,30 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     }
 }
 
-impl<'a> RtpPacketBuilder<&'a [u8], &'a [u8]> {
+impl<'a, 'b> RtpPacketBuilder<&'a [u8], &'b [u8]> {
     /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
     /// written.
-    pub fn write_into_unchecked<'b: 'a>(&self, buf: &'b mut [u8]) -> usize {
+    pub fn write_into_unchecked(&self, buf: &mut [u8]) -> usize {
         let mut writer = RtpPacketWriterMutSlice::new(buf);
         self.write_unchecked(&mut writer)
     }
 
     /// Write this packet into `buf`.  On success returns the number of bytes written or an
     /// `RtpWriteError` on failure.
-    pub fn write_into<'b: 'a>(&self, buf: &'b mut [u8]) -> Result<usize, RtpWriteError> {
+    pub fn write_into(&self, buf: &mut [u8]) -> Result<usize, RtpWriteError> {
         let mut writer = RtpPacketWriterMutSlice::new(buf);
         self.write(&mut writer)
     }
 
     /// Write this packet into `buf` without any validity checks.  The data will be appended to the
     /// end of the provide Vec.
-    pub fn write_into_vec_unchecked(&self, buf: &'a mut Vec<u8>) {
+    pub fn write_into_vec_unchecked(&self, buf: &mut Vec<u8>) {
         let mut writer = RtpPacketWriterMutVec::new(buf);
         self.write_unchecked(&mut writer)
     }
 
     /// Write this packet into `buf`.  The data will be appended to the end of the provide Vec.
-    pub fn write_into_vec(&self, buf: &'a mut Vec<u8>) -> Result<(), RtpWriteError> {
+    pub fn write_into_vec(&self, buf: &mut Vec<u8>) -> Result<(), RtpWriteError> {
         let mut writer = RtpPacketWriterMutVec::new(buf);
         self.write(&mut writer)
     }
@@ -381,16 +383,16 @@ impl<T, const N: usize> PayloadLength for &[T; N] {
 
 /// An implementation of a [`RtpPacketWriter`] that appends to a `Vec<u8>`.
 #[derive(Default, Debug)]
-pub struct RtpPacketWriterVec<'a> {
+pub struct RtpPacketWriterVec<'a, 'b> {
     output: Vec<u8>,
     padding: Option<u8>,
-    phantom: std::marker::PhantomData<&'a [u8]>,
+    phantom: PhantomData<(&'a [u8], &'b [u8])>,
 }
 
-impl<'a> RtpPacketWriter for RtpPacketWriterVec<'a> {
+impl<'a, 'b> RtpPacketWriter for RtpPacketWriterVec<'a, 'b> {
     type Output = Vec<u8>;
     type Payload = &'a [u8];
-    type Extension = &'a [u8];
+    type Extension = &'b [u8];
 
     fn reserve(&mut self, size: usize) {
         if self.output.len() < size {
@@ -429,23 +431,25 @@ impl<'a> RtpPacketWriter for RtpPacketWriterVec<'a> {
 /// An implementation of a [`RtpPacketWriter`] that writes to a `&mut [u8]`.  Each packet will be
 /// written starting at the beginning of the provided slice.
 #[derive(Default, Debug)]
-pub struct RtpPacketWriterMutSlice<'a> {
+pub struct RtpPacketWriterMutSlice<'a, 'b, 'c> {
     output: &'a mut [u8],
     padding: Option<u8>,
     write_i: usize,
+    phantom: PhantomData<(&'b [u8], &'c [u8])>,
 }
 
-impl<'a> RtpPacketWriterMutSlice<'a> {
+impl<'a, 'b, 'c> RtpPacketWriterMutSlice<'a, 'b, 'c> {
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
             output: buf,
             padding: None,
             write_i: 0,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<'a> std::ops::Deref for RtpPacketWriterMutSlice<'a> {
+impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutSlice<'a, 'b, 'c> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -453,16 +457,16 @@ impl<'a> std::ops::Deref for RtpPacketWriterMutSlice<'a> {
     }
 }
 
-impl<'a> std::ops::DerefMut for RtpPacketWriterMutSlice<'a> {
+impl<'a, 'b, 'c> std::ops::DerefMut for RtpPacketWriterMutSlice<'a, 'b, 'c> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'a> RtpPacketWriter for RtpPacketWriterMutSlice<'a> {
+impl<'a, 'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'a, 'b, 'c> {
     type Output = usize;
-    type Payload = &'a [u8];
-    type Extension = &'a [u8];
+    type Payload = &'b [u8];
+    type Extension = &'c [u8];
 
     fn max_size(&self) -> Option<usize> {
         Some(self.output.len())
@@ -503,21 +507,23 @@ impl<'a> RtpPacketWriter for RtpPacketWriterMutSlice<'a> {
 /// written will be appended to the provide `Vec<u8>`.  You can `clear()` the vec in between packets
 /// to have each packet written from the beginning of the vec.
 #[derive(Debug)]
-pub struct RtpPacketWriterMutVec<'a> {
+pub struct RtpPacketWriterMutVec<'a, 'b, 'c> {
     output: &'a mut Vec<u8>,
     padding: Option<u8>,
+    phantom: PhantomData<(&'b [u8], &'c [u8])>,
 }
 
-impl<'a> RtpPacketWriterMutVec<'a> {
+impl<'a, 'b, 'c> RtpPacketWriterMutVec<'a, 'b, 'c> {
     pub fn new(buf: &'a mut Vec<u8>) -> Self {
         Self {
             output: buf,
             padding: None,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<'a> std::ops::Deref for RtpPacketWriterMutVec<'a> {
+impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutVec<'a, 'b, 'c> {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
@@ -525,16 +531,16 @@ impl<'a> std::ops::Deref for RtpPacketWriterMutVec<'a> {
     }
 }
 
-impl<'a> std::ops::DerefMut for RtpPacketWriterMutVec<'a> {
+impl<'a, 'b, 'c> std::ops::DerefMut for RtpPacketWriterMutVec<'a, 'b, 'c> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'a> RtpPacketWriter for RtpPacketWriterMutVec<'a> {
+impl<'a, 'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'a, 'b, 'c> {
     type Output = ();
-    type Payload = &'a [u8];
-    type Extension = &'a [u8];
+    type Payload = &'b [u8];
+    type Extension = &'c [u8];
 
     fn push(&mut self, data: &[u8]) {
         self.output.extend(data);
