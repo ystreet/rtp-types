@@ -154,7 +154,8 @@ impl<'a> RtpPacket<'a> {
         }
     }
 
-    fn extension_bit(&self) -> bool {
+    /// Returns whether the extension bit is set for this packet.
+    pub fn extension_bit(&self) -> bool {
         (self.data[0] & 0b0001_0000) != 0
     }
 
@@ -213,7 +214,8 @@ impl<'a> RtpPacket<'a> {
         Self::MIN_RTP_PACKET_LEN + (self.n_csrcs() as usize) * 4
     }
 
-    fn extension_len(&self) -> usize {
+    /// Returns the length of the extension data in this packet.
+    pub fn extension_len(&self) -> usize {
         if self.extension_bit() {
             let offset = self.extension_offset();
             4 * ((self.data[offset + 2] as usize) << 8 | self.data[offset + 3] as usize)
@@ -235,7 +237,8 @@ impl<'a> RtpPacket<'a> {
         }
     }
 
-    fn payload_offset(&self) -> usize {
+    /// Returns the offset of the payload in this packet relative to the beginning of the packet.
+    pub fn payload_offset(&self) -> usize {
         self.extension_offset()
             + if self.extension_bit() {
                 self.extension_len() + 4
