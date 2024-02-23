@@ -35,7 +35,7 @@ pub enum RtpWriteError {
 pub struct RtpPacketBuilder<P: PayloadLength, E: PayloadLength> {
     padding: Option<u8>,
     csrcs: smallvec::SmallVec<[u32; 15]>,
-    marker: bool,
+    marker_bit: bool,
     payload_type: u8,
     sequence_number: u16,
     timestamp: u32,
@@ -56,7 +56,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
         Self {
             padding: None,
             csrcs: smallvec::smallvec![],
-            marker: false,
+            marker_bit: false,
             // set to an invalid value to force the user to update
             payload_type: 0xff,
             sequence_number: 0,
@@ -92,8 +92,14 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     }
 
     /// Set the marker bit for this packet.
-    pub fn marker(mut self, marker: bool) -> Self {
-        self.marker = marker;
+    #[deprecated = "Use `marker_bit()` instead"]
+    pub fn marker(self, marker: bool) -> Self {
+        self.marker_bit(marker)
+    }
+
+    /// Set the marker bit for this packet.
+    pub fn marker_bit(mut self, marker_bit: bool) -> Self {
+        self.marker_bit = marker_bit;
         self
     }
 
@@ -184,7 +190,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
         buf[0] = byte;
 
         let mut byte = self.payload_type & 0x7f;
-        if self.marker {
+        if self.marker_bit {
             byte |= 0x80;
         }
         buf[1] = byte;
@@ -589,7 +595,7 @@ mod tests {
             assert_eq!(rtp.version(), 2);
             assert_eq!(rtp.padding(), None);
             assert_eq!(rtp.n_csrcs(), 0);
-            assert!(!rtp.marker());
+            assert!(!rtp.marker_bit());
             assert_eq!(rtp.payload_type(), 96);
             assert_eq!(rtp.sequence_number(), 0x0);
             assert_eq!(rtp.timestamp(), 0x0);
@@ -606,7 +612,7 @@ mod tests {
         let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .marker(true)
+            .marker_bit(true)
             .sequence_number(0x0102)
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
@@ -624,7 +630,7 @@ mod tests {
             assert_eq!(rtp.version(), 2);
             assert_eq!(rtp.padding(), None);
             assert_eq!(rtp.n_csrcs(), 1);
-            assert!(rtp.marker());
+            assert!(rtp.marker_bit());
             assert_eq!(rtp.payload_type(), 96);
             assert_eq!(rtp.sequence_number(), 0x0102);
             assert_eq!(rtp.timestamp(), 0x03040506);
@@ -698,7 +704,7 @@ mod tests {
         let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .marker(true)
+            .marker_bit(true)
             .sequence_number(0x0102)
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
@@ -717,7 +723,7 @@ mod tests {
             assert_eq!(rtp.version(), 2);
             assert_eq!(rtp.padding(), None);
             assert_eq!(rtp.n_csrcs(), 1);
-            assert!(rtp.marker());
+            assert!(rtp.marker_bit());
             assert_eq!(rtp.payload_type(), 96);
             assert_eq!(rtp.sequence_number(), 0x0102);
             assert_eq!(rtp.timestamp(), 0x03040506);
@@ -738,7 +744,7 @@ mod tests {
         let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .marker(true)
+            .marker_bit(true)
             .sequence_number(0x0102)
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
@@ -759,7 +765,7 @@ mod tests {
             assert_eq!(rtp.version(), 2);
             assert_eq!(rtp.padding(), Some(7));
             assert_eq!(rtp.n_csrcs(), 1);
-            assert!(rtp.marker());
+            assert!(rtp.marker_bit());
             assert_eq!(rtp.payload_type(), 96);
             assert_eq!(rtp.sequence_number(), 0x0102);
             assert_eq!(rtp.timestamp(), 0x03040506);
@@ -1011,7 +1017,7 @@ mod tests {
         let payload_data = TestPayload(vec![11, 12, 13, 14, 15, 16, 17, 18]);
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .marker(true)
+            .marker_bit(true)
             .sequence_number(0x0102)
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
@@ -1028,7 +1034,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), Some(7));
         assert_eq!(rtp.n_csrcs(), 1);
-        assert!(rtp.marker());
+        assert!(rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);

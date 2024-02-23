@@ -30,8 +30,14 @@ impl<'a> RtpPacketMut<'a> {
     }
 
     /// Change the marker bit of this packet.
+    #[deprecated = "Use `set_marker_bit()` instead"]
     pub fn set_marker(&mut self, marker: bool) {
-        if marker {
+        self.set_marker_bit(marker);
+    }
+
+    /// Change the marker bit of this packet.
+    pub fn set_marker_bit(&mut self, marker_bit: bool) {
+        if marker_bit {
             self.data[1] |= 0x80;
         } else {
             self.data[1] &= 0x7f;
@@ -116,7 +122,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), None);
         assert_eq!(rtp.n_csrcs(), 0);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
@@ -124,8 +130,8 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[]);
-        rtp.set_marker(true);
-        assert!(rtp.marker());
+        rtp.set_marker_bit(true);
+        assert!(rtp.marker_bit());
         rtp.set_payload_type(12).unwrap();
         assert_eq!(rtp.payload_type(), 12);
         rtp.set_sequence_number(0x9876);
