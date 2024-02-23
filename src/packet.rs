@@ -45,7 +45,7 @@ impl<'a> fmt::Debug for RtpPacket<'a> {
 
         f.debug_struct("RtpPacket")
             .field("version", &self.version())
-            .field("marker", &self.marker())
+            .field("marker_bit", &self.marker_bit())
             .field("payload_type", &self.payload_type())
             .field("sequence_number", &self.sequence_number())
             .field("timestamp", &self.timestamp())
@@ -141,7 +141,8 @@ impl<'a> RtpPacket<'a> {
         (self.data[0] & 0b1100_0000) >> 6
     }
 
-    fn padding_bit(&self) -> bool {
+    /// Returns whether the padding bit is set for this packet.
+    pub fn padding_bit(&self) -> bool {
         self.data[0] & 0b0010_0000 != 0
     }
 
@@ -167,7 +168,14 @@ impl<'a> RtpPacket<'a> {
 
     /// Returns whether the marker bit is set for this packet.  The meaning of the marker bit
     /// is payload-specific.
+    #[deprecated = "Use `marker_bit()` instead"]
     pub fn marker(&self) -> bool {
+        self.marker_bit()
+    }
+
+    /// Returns whether the marker bit is set for this packet.  The meaning of the marker bit
+    /// is payload-specific.
+    pub fn marker_bit(&self) -> bool {
         (self.data[1] & 0b1000_0000) != 0
     }
 
@@ -266,7 +274,7 @@ impl<'a> RtpPacket<'a> {
     /// any padding bytes).  Any aspect of the returned builder can be modified.
     pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<&'a [u8], &'a [u8]> {
         let mut builder = crate::RtpPacketBuilder::new()
-            .marker(self.marker())
+            .marker_bit(self.marker_bit())
             .payload_type(self.payload_type())
             .sequence_number(self.sequence_number())
             .timestamp(self.timestamp())
@@ -298,7 +306,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), None);
         assert_eq!(rtp.n_csrcs(), 0);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
@@ -334,7 +342,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), None);
         assert_eq!(rtp.n_csrcs(), 1);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
@@ -373,7 +381,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), None);
         assert_eq!(rtp.n_csrcs(), 0);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
@@ -428,7 +436,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), None);
         assert_eq!(rtp.n_csrcs(), 0);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
@@ -450,7 +458,7 @@ mod tests {
         assert_eq!(rtp.version(), 2);
         assert_eq!(rtp.padding(), Some(2));
         assert_eq!(rtp.n_csrcs(), 0);
-        assert!(!rtp.marker());
+        assert!(!rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
         assert_eq!(rtp.sequence_number(), 0x0102);
         assert_eq!(rtp.timestamp(), 0x03040506);
