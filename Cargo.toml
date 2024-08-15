@@ -14,3 +14,10 @@ rust-version = '1.57.0'
 [dependencies]
 smallvec = { version = "1", features = ["union"] }
 thiserror = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "parse"
+harness = false
