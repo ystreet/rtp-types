@@ -21,3 +21,7 @@ criterion = "0.5"
 [[bench]]
 name = "parse"
 harness = false
+
+[[bench]]
+name = "write"
+harness = false
