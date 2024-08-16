@@ -164,7 +164,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
             if ext_data.len() % 4 != 0 {
                 return Err(RtpWriteError::ExtensionDataNotPadded);
             }
-            4 + ext_data.len() / 4
+            4 + ext_data.len()
         } else {
             0
         };
@@ -961,6 +961,7 @@ mod tests {
     struct TestRtpWriterCustomPayload {
         output: Option<Vec<u8>>,
         padding: Option<u8>,
+        max_size: usize,
     }
 
     impl RtpPacketWriter for TestRtpWriterCustomPayload {
@@ -982,6 +983,13 @@ mod tests {
             let p = self
                 .output
                 .get_or_insert_with(|| Vec::with_capacity(data.len()));
+            println!(
+                "push {} bytes at offset {}, max_size {}",
+                data.len(),
+                p.len(),
+                self.max_size
+            );
+            assert!(p.len() + data.len() <= self.max_size);
             p.extend_from_slice(data)
         }
 
@@ -1024,15 +1032,19 @@ mod tests {
             .add_csrc(0x0b0c0d0e)
             .extension(0x9876, TestPayload(extension_data.0.clone()))
             .payload(TestPayload(payload_data.0.clone()))
-            .padding(7);
-        let mut writer = TestRtpWriterCustomPayload::default();
+            .padding(1);
+        let max_size = builder.calculate_size().unwrap();
+        let mut writer = TestRtpWriterCustomPayload {
+            max_size,
+            ..Default::default()
+        };
         let buf = builder.write(&mut writer).unwrap();
         drop(builder);
         let data = buf.as_ref();
         println!("{data:?}");
         let rtp = RtpPacket::parse(data).unwrap();
         assert_eq!(rtp.version(), 2);
-        assert_eq!(rtp.padding(), Some(7));
+        assert_eq!(rtp.padding(), Some(1));
         assert_eq!(rtp.n_csrcs(), 1);
         assert!(rtp.marker_bit());
         assert_eq!(rtp.payload_type(), 96);
