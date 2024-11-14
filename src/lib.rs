@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![deny(missing_debug_implementations)]
+
 mod builder;
 mod edit;
 mod packet;
