@@ -1,7 +1,7 @@
 [package]
 name = "rtp-types"
 description = "RTP packet parser and writers"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Matthew Waters <matthew@centricular.com>"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
