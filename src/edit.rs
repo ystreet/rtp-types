@@ -3,6 +3,7 @@
 use crate::{RtpPacket, RtpParseError, RtpWriteError};
 
 /// Mutable parsed RTP packet for editing of some fields.
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct RtpPacketMut<'a> {
     data: &'a mut [u8],
