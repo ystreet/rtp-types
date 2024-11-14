@@ -318,7 +318,9 @@ impl<'a, 'b> RtpPacketBuilder<&'a [u8], &'b [u8]> {
 
 /// Trait to provide the length of a piece of data in bytes.
 pub trait PayloadLength {
+    /// The length of the data in bytes.
     fn len(&self) -> usize;
+    /// Whether the data contains any bytes.
     fn is_empty(&self) -> bool {
         self.len() != 0
     }
@@ -326,8 +328,11 @@ pub trait PayloadLength {
 
 /// Trait to write an RTP packet into and/or from custom data types.
 pub trait RtpPacketWriter {
+    /// The type of the output.
     type Output;
+    /// The type of the RTP payload to be stored in the output packet.
     type Payload: PayloadLength;
+    /// The type of the RTP extension data to be stored in the output packet:was.
     type Extension: PayloadLength;
 
     /// Reserve a number of bytes in the output.  Multiple calls are possible and provide the
@@ -445,6 +450,7 @@ pub struct RtpPacketWriterMutSlice<'a, 'b, 'c> {
 }
 
 impl<'a, 'b, 'c> RtpPacketWriterMutSlice<'a, 'b, 'c> {
+    /// Construct a new [`RtpPacketWriterMutSlice`] from the provided slice.
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
             output: buf,
@@ -520,6 +526,7 @@ pub struct RtpPacketWriterMutVec<'a, 'b, 'c> {
 }
 
 impl<'a, 'b, 'c> RtpPacketWriterMutVec<'a, 'b, 'c> {
+    /// Construct a new [`RtpPacketWriterMutVec`] from a provided mutable `Vec<u8>`.
     pub fn new(buf: &'a mut Vec<u8>) -> Self {
         Self {
             output: buf,
