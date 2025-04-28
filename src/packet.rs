@@ -27,11 +27,11 @@ pub struct RtpPacket<'a> {
     data: &'a [u8],
 }
 
-impl<'a> fmt::Debug for RtpPacket<'a> {
+impl fmt::Debug for RtpPacket<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct DebugCsrc<'a>(&'a RtpPacket<'a>);
 
-        impl<'a> fmt::Debug for DebugCsrc<'a> {
+        impl fmt::Debug for DebugCsrc<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut list = f.debug_list();
 

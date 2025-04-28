@@ -275,7 +275,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     }
 }
 
-impl<'a, 'b> RtpPacketBuilder<&'a [u8], &'b [u8]> {
+impl RtpPacketBuilder<&[u8], &[u8]> {
     /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
     /// written.
     pub fn write_into_unchecked(&self, buf: &mut [u8]) -> usize {
@@ -449,7 +449,7 @@ pub struct RtpPacketWriterMutSlice<'a, 'b, 'c> {
     phantom: PhantomData<(&'b [u8], &'c [u8])>,
 }
 
-impl<'a, 'b, 'c> RtpPacketWriterMutSlice<'a, 'b, 'c> {
+impl<'a> RtpPacketWriterMutSlice<'a, '_, '_> {
     /// Construct a new [`RtpPacketWriterMutSlice`] from the provided slice.
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
@@ -461,7 +461,7 @@ impl<'a, 'b, 'c> RtpPacketWriterMutSlice<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutSlice<'a, 'b, 'c> {
+impl std::ops::Deref for RtpPacketWriterMutSlice<'_, '_, '_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -469,13 +469,13 @@ impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutSlice<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> std::ops::DerefMut for RtpPacketWriterMutSlice<'a, 'b, 'c> {
+impl std::ops::DerefMut for RtpPacketWriterMutSlice<'_, '_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'a, 'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'a, 'b, 'c> {
+impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b, 'c> {
     type Output = usize;
     type Payload = &'b [u8];
     type Extension = &'c [u8];
@@ -525,7 +525,7 @@ pub struct RtpPacketWriterMutVec<'a, 'b, 'c> {
     phantom: PhantomData<(&'b [u8], &'c [u8])>,
 }
 
-impl<'a, 'b, 'c> RtpPacketWriterMutVec<'a, 'b, 'c> {
+impl<'a> RtpPacketWriterMutVec<'a, '_, '_> {
     /// Construct a new [`RtpPacketWriterMutVec`] from a provided mutable `Vec<u8>`.
     pub fn new(buf: &'a mut Vec<u8>) -> Self {
         Self {
@@ -536,7 +536,7 @@ impl<'a, 'b, 'c> RtpPacketWriterMutVec<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutVec<'a, 'b, 'c> {
+impl std::ops::Deref for RtpPacketWriterMutVec<'_, '_, '_> {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
@@ -544,13 +544,13 @@ impl<'a, 'b, 'c> std::ops::Deref for RtpPacketWriterMutVec<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> std::ops::DerefMut for RtpPacketWriterMutVec<'a, 'b, 'c> {
+impl std::ops::DerefMut for RtpPacketWriterMutVec<'_, '_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'a, 'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'a, 'b, 'c> {
+impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'_, 'b, 'c> {
     type Output = ();
     type Payload = &'b [u8];
     type Extension = &'c [u8];
