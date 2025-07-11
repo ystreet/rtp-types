@@ -4,6 +4,7 @@ use std::fmt;
 
 /// An error produced when parsing a packet.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RtpParseError {
     /// Version is unsupported.  This implementation only supports version 2.
     #[error("Unsupported RTP version {}", .0)]
