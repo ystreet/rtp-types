@@ -6,6 +6,7 @@ use crate::RtpPacket;
 
 /// Errors produced when wrting a packet
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RtpWriteError {
     /// Output buffer is not large enough to fit the resulting buffer.  The requested size is
     /// returned.
