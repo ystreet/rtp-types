@@ -19,6 +19,9 @@ pub enum RtpParseError {
     /// The padding byte does not contain a valid value.
     #[error("Padding contains invalid value {}", .0)]
     PaddingInvalid(u8),
+    /// This is actually an RTCP packet.
+    #[error("RTCP packet of type {}", .0)]
+    RtcpPacket(u8),
 }
 
 /// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed.
@@ -74,6 +77,12 @@ impl<'a> RtpPacket<'a> {
                 expected: Self::MIN_RTP_PACKET_LEN,
                 actual: data.len(),
             });
+        }
+
+        // Detect RTCP packets here. We still allow payload types 72-76 as long
+        // as the marker bit is not set.
+        if (200..=204).contains(&data[1]) {
+            return Err(RtpParseError::RtcpPacket(data[1]));
         }
 
         let ret = Self { data };
