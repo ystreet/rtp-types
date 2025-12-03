@@ -116,8 +116,8 @@ mod tests {
 
     #[test]
     fn edit_rtp_no_payload_no_extensions_no_csrc() {
-        let mut data: [u8; 12] = [
-            0x80, 0x60, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+        let mut data: [u8; 13] = [
+            0x80, 0x60, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
         ];
         let mut rtp = RtpPacketMut::parse(data.as_mut_slice()).unwrap();
         assert_eq!(rtp.version(), 2);
@@ -130,16 +130,146 @@ mod tests {
         assert_eq!(rtp.ssrc(), 0x07080910);
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
-        assert_eq!(rtp.payload(), &[]);
+        assert_eq!(rtp.payload(), &[0x11]);
+        assert_eq!(rtp.payload_mut(), [0x11].as_mut_slice());
         rtp.set_marker_bit(true);
         assert!(rtp.marker_bit());
-        rtp.set_payload_type(12).unwrap();
-        assert_eq!(rtp.payload_type(), 12);
+        rtp.set_payload_type(0x7F).unwrap();
+        assert_eq!(rtp.payload_type(), 0x7F);
         rtp.set_sequence_number(0x9876);
         assert_eq!(rtp.sequence_number(), 0x9876);
         rtp.set_timestamp(0x19283746);
         assert_eq!(rtp.timestamp(), 0x19283746);
         rtp.set_ssrc(0x90807060);
         assert_eq!(rtp.ssrc(), 0x90807060);
+    }
+
+    #[test]
+    fn edit_rtp_set_payload_out_of_range() {
+        let mut data: [u8; 12] = [
+            0x80, 0x60, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+        ];
+        let mut rtp = RtpPacketMut::parse(data.as_mut_slice()).unwrap();
+        assert_eq!(
+            rtp.set_payload_type(0xFF),
+            Err(RtpWriteError::InvalidPayloadType(0xFF))
+        );
+        assert_eq!(
+            rtp.set_payload_type(0x80),
+            Err(RtpWriteError::InvalidPayloadType(0x80))
+        );
+    }
+
+    #[test]
+    fn edit_rtp_with_extension() {
+        let mut data: [u8; 20] = [
+            0x90, 0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
+            0x00, 0x1, 0x0d, 0x0e, 0x0f, 0x10,
+        ];
+        let mut rtp = RtpPacketMut::parse(data.as_mut_slice()).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.padding(), None);
+        assert_eq!(rtp.n_csrcs(), 0);
+        assert!(rtp.marker_bit());
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.sequence_number(), 0x0102);
+        assert_eq!(rtp.timestamp(), 0x03040506);
+        assert_eq!(rtp.ssrc(), 0x0708090a);
+        assert_eq!(rtp.csrc().count(), 0);
+        assert_eq!(
+            rtp.extension(),
+            Some((0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
+        );
+        assert_eq!(rtp.payload(), &[]);
+        assert_eq!(rtp.payload_mut(), &mut []);
+
+        rtp.set_marker_bit(false);
+        assert!(!rtp.marker_bit());
+        rtp.set_payload_type(0x7F).unwrap();
+        assert_eq!(rtp.payload_type(), 0x7F);
+        rtp.set_sequence_number(0x9876);
+        assert_eq!(rtp.sequence_number(), 0x9876);
+        rtp.set_timestamp(0x19283746);
+        assert_eq!(rtp.timestamp(), 0x19283746);
+        rtp.set_ssrc(0x90807060);
+        assert_eq!(rtp.ssrc(), 0x90807060);
+        rtp.set_extension_id(0x1234);
+        assert_eq!(
+            rtp.extension(),
+            Some((0x1234, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
+        );
+        assert_eq!(
+            rtp.extension_mut(),
+            Some([0x0d, 0x0e, 0x0f, 0x10].as_mut_slice())
+        );
+    }
+
+    #[test]
+    fn edit_rtp_with_payload() {
+        let mut data: [u8; 16] = [
+            0x80, 0x60, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
+            0x0d, 0x0e,
+        ];
+        let mut rtp = RtpPacketMut::parse(data.as_mut_slice()).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.padding(), None);
+        assert_eq!(rtp.n_csrcs(), 0);
+        assert!(!rtp.marker_bit());
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.sequence_number(), 0x0102);
+        assert_eq!(rtp.timestamp(), 0x03040506);
+        assert_eq!(rtp.ssrc(), 0x0708090a);
+        assert_eq!(rtp.csrc().count(), 0);
+        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
+
+        rtp.set_marker_bit(true);
+        assert!(rtp.marker_bit());
+        rtp.set_payload_type(0x00).unwrap();
+        assert_eq!(rtp.payload_type(), 0x00);
+        rtp.set_sequence_number(0x9876);
+        assert_eq!(rtp.sequence_number(), 0x9876);
+        rtp.set_timestamp(0x19283746);
+        assert_eq!(rtp.timestamp(), 0x19283746);
+        rtp.set_ssrc(0x90807060);
+        assert_eq!(rtp.ssrc(), 0x90807060);
+        rtp.set_extension_id(0x1234);
+        assert_eq!(rtp.payload(), [0x0b, 0x0c, 0x0d, 0x0e].as_ref());
+        assert_eq!(rtp.payload_mut(), [0x0b, 0x0c, 0x0d, 0x0e].as_mut_slice());
+    }
+
+    #[test]
+    fn parse_rtp_with_padding() {
+        let mut data: [u8; 16] = [
+            0xa0, 0x60, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x0b, 0x0c,
+            0x00, 0x02,
+        ];
+        let mut rtp = RtpPacketMut::parse(data.as_mut_slice()).unwrap();
+        assert_eq!(rtp.version(), 2);
+        assert_eq!(rtp.padding(), Some(2));
+        assert_eq!(rtp.n_csrcs(), 0);
+        assert!(!rtp.marker_bit());
+        assert_eq!(rtp.payload_type(), 96);
+        assert_eq!(rtp.sequence_number(), 0x1234);
+        assert_eq!(rtp.timestamp(), 0x56789abc);
+        assert_eq!(rtp.ssrc(), 0xdef01234);
+        assert_eq!(rtp.csrc().count(), 0);
+        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
+        assert_eq!(rtp.payload_len(), 2);
+
+        rtp.set_marker_bit(true);
+        assert!(rtp.marker_bit());
+        rtp.set_payload_type(0x01).unwrap();
+        assert_eq!(rtp.payload_type(), 0x01);
+        rtp.set_sequence_number(0x9876);
+        assert_eq!(rtp.sequence_number(), 0x9876);
+        rtp.set_timestamp(0x19283746);
+        assert_eq!(rtp.timestamp(), 0x19283746);
+        rtp.set_ssrc(0x90807060);
+        assert_eq!(rtp.ssrc(), 0x90807060);
+        rtp.set_extension_id(0x1234);
+        assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
+        assert_eq!(rtp.payload_mut(), &mut [0x0b, 0x0c]);
     }
 }
