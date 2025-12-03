@@ -323,7 +323,7 @@ pub trait PayloadLength {
     fn len(&self) -> usize;
     /// Whether the data contains any bytes.
     fn is_empty(&self) -> bool {
-        self.len() != 0
+        self.len() == 0
     }
 }
 
@@ -584,6 +584,18 @@ impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'_, 'b, 'c> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payload_length() {
+        let data = [3; 9];
+        let data2: [u8; _] = [];
+        assert!(PayloadLength::is_empty(&data2));
+        assert!(!PayloadLength::is_empty(&data));
+        assert_eq!(PayloadLength::len(&data), 9);
+        assert_eq!(PayloadLength::len(&&data), 9);
+        assert_eq!(PayloadLength::len(&data.as_slice()), 9);
+        assert_eq!(PayloadLength::len(&data.to_vec()), 9);
+    }
 
     #[test]
     fn write_rtp_default() {
