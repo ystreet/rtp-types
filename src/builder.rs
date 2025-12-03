@@ -783,6 +783,51 @@ mod tests {
     }
 
     #[test]
+    fn write_rtp_extension_clear() {
+        let mut data = [0; 128];
+        let mut vec = vec![];
+        let mut vec2 = vec![];
+        let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
+        let builder = RtpPacketBuilder::new()
+            .payload_type(96)
+            .marker_bit(true)
+            .sequence_number(0x0102)
+            .timestamp(0x03040506)
+            .ssrc(0x0708090a)
+            .add_csrc(0x0b0c0d0e)
+            .extension(0x9876, extension_data.as_ref())
+            .clear_extension();
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
+        builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
+        drop(builder);
+        let data = &data[..size];
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
+            println!("{data:?}");
+            let rtp = RtpPacket::parse(data).unwrap();
+            assert_eq!(rtp.version(), 2);
+            assert_eq!(rtp.padding(), None);
+            assert_eq!(rtp.n_csrcs(), 1);
+            assert!(rtp.marker_bit());
+            assert_eq!(rtp.payload_type(), 96);
+            assert_eq!(rtp.sequence_number(), 0x0102);
+            assert_eq!(rtp.timestamp(), 0x03040506);
+            assert_eq!(rtp.ssrc(), 0x0708090a);
+            let mut csrc = rtp.csrc();
+            assert_eq!(csrc.next(), Some(0x0b0c0d0e));
+            assert_eq!(csrc.next(), None);
+            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.payload(), &[]);
+        }
+    }
+
+    #[test]
     fn write_rtp_extension_payload_padding() {
         let mut data = [0; 128];
         let mut vec = vec![];
