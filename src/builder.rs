@@ -159,11 +159,11 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     pub fn calculate_size(&self) -> Result<usize, RtpWriteError> {
         let payload_len = self.payloads.iter().map(|p| p.len()).sum::<usize>();
         let extension_len = if let Some((_ext_id, ext_data)) = self.extension.as_ref() {
-            if ext_data.len() > u16::MAX as usize {
-                return Err(RtpWriteError::PacketTooLarge);
-            }
             if ext_data.len() % 4 != 0 {
                 return Err(RtpWriteError::ExtensionDataNotPadded);
+            }
+            if ext_data.len() > u16::MAX as usize {
+                return Err(RtpWriteError::PacketTooLarge);
             }
             4 + ext_data.len()
         } else {
@@ -600,10 +600,15 @@ mod tests {
     fn write_rtp_default() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let builder = RtpPacketBuilder::new().payload_type(96);
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
@@ -629,6 +634,7 @@ mod tests {
     fn write_rtp_header() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
             .marker_bit(true)
@@ -638,7 +644,11 @@ mod tests {
             .add_csrc(0x0b0c0d0e);
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
@@ -666,13 +676,20 @@ mod tests {
     fn write_rtp_header_multiple_csrcs() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
             .add_csrc(0x01020304)
             .add_csrc(0x05060708);
         let size = builder.write_into(&mut data).unwrap();
+        let size2 = builder.write_into_unchecked(&mut data);
+        assert_eq!(size, size2);
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
@@ -692,6 +709,7 @@ mod tests {
     fn write_rtp_multiple_payloads() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let more_payload_data = [9, 10, 11];
         let builder = RtpPacketBuilder::new()
@@ -702,7 +720,11 @@ mod tests {
         let size = builder.write_into(&mut data).unwrap();
         assert_eq!(size, 24);
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
@@ -720,6 +742,7 @@ mod tests {
     fn write_rtp_extension() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
@@ -731,7 +754,11 @@ mod tests {
             .extension(0x9876, extension_data.as_ref());
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
@@ -759,6 +786,7 @@ mod tests {
     fn write_rtp_extension_payload_padding() {
         let mut data = [0; 128];
         let mut vec = vec![];
+        let mut vec2 = vec![];
         let extension_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let payload_data = [1, 2, 3, 4, 5, 6, 7, 8];
         let builder = RtpPacketBuilder::new()
@@ -773,7 +801,11 @@ mod tests {
             .padding(7);
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
         builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
         drop(builder);
         let data = &data[..size];
         assert_eq!(size, buf.len());
