@@ -504,9 +504,8 @@ impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b, 'c> {
 
     fn finish(&mut self) -> Self::Output {
         if let Some(padding) = self.padding.take() {
-            if padding > 1 {
-                self.output[self.write_i..self.write_i + padding as usize - 1].fill(0);
-            }
+            debug_assert!(padding > 0);
+            self.output[self.write_i..self.write_i + padding as usize - 1].fill(0);
             self.write_i += padding as usize;
             self.output[self.write_i - 1] = padding;
         }
