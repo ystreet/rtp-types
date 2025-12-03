@@ -974,6 +974,65 @@ mod tests {
     }
 
     #[test]
+    fn write_rtp_max_contributions() {
+        let mut data = [0; 128];
+        let mut vec = vec![];
+        let mut vec2 = vec![];
+        let builder = RtpPacketBuilder::new()
+            .payload_type(96)
+            .marker_bit(true)
+            .sequence_number(0x0102)
+            .timestamp(0x03040506)
+            .ssrc(0x0708090a)
+            .maybe_padding(Some(7))
+            .add_csrc(1)
+            .add_csrc(2)
+            .add_csrc(3)
+            .add_csrc(4)
+            .add_csrc(5)
+            .add_csrc(6)
+            .add_csrc(7)
+            .add_csrc(8)
+            .add_csrc(9)
+            .add_csrc(10)
+            .add_csrc(11)
+            .add_csrc(12)
+            .add_csrc(13)
+            .add_csrc(14)
+            .add_csrc(15);
+        let size = builder.write_into(&mut data).unwrap();
+        let buf = builder.write_vec().unwrap();
+        let buf2 = builder.write_vec_unchecked();
+        assert_eq!(buf, buf2);
+        builder.write_into_vec(&mut vec).unwrap();
+        builder.write_into_vec_unchecked(&mut vec2);
+        assert_eq!(vec, vec2);
+        drop(builder);
+        let data = &data[..size];
+        assert_eq!(size, buf.len());
+        assert_eq!(size, vec.len());
+        for data in [data, buf.as_ref(), vec.as_ref()] {
+            println!("{data:?}");
+            let rtp = RtpPacket::parse(data).unwrap();
+            assert_eq!(rtp.version(), 2);
+            assert_eq!(rtp.padding(), Some(7));
+            assert_eq!(rtp.n_csrcs(), 15);
+            assert!(rtp.marker_bit());
+            assert_eq!(rtp.payload_type(), 96);
+            assert_eq!(rtp.sequence_number(), 0x0102);
+            assert_eq!(rtp.timestamp(), 0x03040506);
+            assert_eq!(rtp.ssrc(), 0x0708090a);
+            let mut csrc = rtp.csrc();
+            for i in 1..16 {
+                assert_eq!(csrc.next(), Some(i));
+            }
+            assert_eq!(csrc.next(), None);
+            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.payload(), &[]);
+        }
+    }
+
+    #[test]
     fn write_rtp_too_many_contributions() {
         let mut data = [0; 128];
         let mut vec = vec![];
