@@ -82,15 +82,13 @@ impl<'a> RtpPacket<'a> {
             return Err(RtpParseError::UnsupportedVersion(ret.version()));
         }
 
-        if ret.n_csrcs() > 0 {
-            // aka the end of the list of csrcs
-            let expected = ret.extension_offset();
-            if ret.data.len() < expected {
-                return Err(RtpParseError::Truncated {
-                    expected,
-                    actual: ret.data.len(),
-                });
-            }
+        // aka the end of the list of csrcs
+        let expected = ret.extension_offset();
+        if ret.data.len() < expected {
+            return Err(RtpParseError::Truncated {
+                expected,
+                actual: ret.data.len(),
+            });
         }
 
         if ret.extension_bit() {
