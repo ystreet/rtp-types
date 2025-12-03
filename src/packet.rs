@@ -465,6 +465,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
+        assert_eq!(rtp.payload_len(), 2);
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
