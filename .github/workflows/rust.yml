@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: ['1.60', stable]
+        toolchain: ['1.68', stable]
 
     steps:
     - uses: actions/checkout@v2
@@ -28,10 +28,10 @@ jobs:
         override: true
     - name: Build using MSRV Cargo.lock
       run: cp Cargo.lock.msrv Cargo.lock && cargo build --locked --verbose
-      if: matrix.toolchain == '1.60'
+      if: matrix.toolchain == '1.68'
     - name: Build
       run: cargo build --verbose
-      if: matrix.toolchain != '1.60'
+      if: matrix.toolchain != '1.68'
   test:
     runs-on: ubuntu-latest
     steps:
