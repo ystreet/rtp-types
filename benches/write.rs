@@ -3,9 +3,11 @@
 use criterion::{
     criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
-use rtp_types::RtpPacketBuilder;
+use rtp_types::{
+    extension::ExtensionBlock, RtpExtensionsBlock, RtpExtensionsBlockWrite, RtpPacketBuilder,
+};
 
-fn default_builder<'a>() -> RtpPacketBuilder<&'a [u8], &'a [u8]> {
+fn default_builder<'a>() -> RtpPacketBuilder<&'a [u8], ExtensionBlock<'static>> {
     RtpPacketBuilder::new()
         .payload_type(96)
         .ssrc(0x12345678)
@@ -13,15 +15,21 @@ fn default_builder<'a>() -> RtpPacketBuilder<&'a [u8], &'a [u8]> {
         .timestamp(0x200)
 }
 
-fn write_into_vec<'a>(builder: &RtpPacketBuilder<&'a [u8], &'a [u8]>, data: &mut Vec<u8>) {
+fn write_into_vec<E: RtpExtensionsBlockWrite>(
+    builder: &RtpPacketBuilder<&'_ [u8], E>,
+    data: &mut Vec<u8>,
+) {
     builder.write_into_vec(data).unwrap();
 }
 
-fn write_into_slice<'a>(builder: &RtpPacketBuilder<&'a [u8], &'a [u8]>, slice: &mut [u8]) {
+fn write_into_slice<E: RtpExtensionsBlockWrite>(
+    builder: &RtpPacketBuilder<&'_ [u8], E>,
+    slice: &mut [u8],
+) {
     builder.write_into(slice).unwrap();
 }
 
-fn write_vec<'a>(builder: &RtpPacketBuilder<&'a [u8], &'a [u8]>) {
+fn write_vec<E: RtpExtensionsBlockWrite>(builder: &RtpPacketBuilder<&'_ [u8], E>) {
     let _data = builder.write_vec().unwrap();
 }
 
@@ -55,7 +63,8 @@ fn bench_write(c: &mut Criterion) {
         ),
         (
             "Extension",
-            default_builder().extension(0x2345, payload16.as_slice()),
+            default_builder()
+                .extension(ExtensionBlock::parse(0x2345, payload16.as_slice()).unwrap()),
         ),
         ("Payload16", default_builder().payload(payload16.as_slice())),
         (
