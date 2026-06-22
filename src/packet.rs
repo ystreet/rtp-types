@@ -2,8 +2,10 @@
 
 use std::fmt;
 
+use crate::{extension::ExtensionBlock, RtpExtensionsBlock};
+
 /// An error produced when parsing a packet.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RtpParseError {
     /// Version is unsupported.  This implementation only supports version 2.
@@ -20,6 +22,12 @@ pub enum RtpParseError {
     /// The padding byte does not contain a valid value.
     #[error("Padding contains invalid value {}", .0)]
     PaddingInvalid(u8),
+    /// The extension identifier is not supported by this implementation.
+    #[error("Unsupported extension implementation")]
+    UnsupportedExtensionImplementation,
+    /// The extension data is invalid.
+    #[error("Invalid extension data")]
+    InvalidData,
 }
 
 /// A parsed RTP packet.  A wrapper around a byte slice.  Each field is only accessed when needed.
@@ -52,7 +60,7 @@ impl fmt::Debug for RtpPacket<'_> {
             .field("timestamp", &self.timestamp())
             .field("ssrc", &self.ssrc())
             .field("csrc", &DebugCsrc(self))
-            .field("extension", &self.extension())
+            .field("extension", &self.extension::<ExtensionBlock>().ok())
             .field("payload", &self.payload())
             .field("padding", &self.padding())
             .finish()
@@ -231,16 +239,19 @@ impl<'a> RtpPacket<'a> {
         }
     }
 
-    /// Returns the extension data for this packet.  The first value is an identifier and is
-    /// 'defined by the RTP profile'.  The second value is the extension data.
-    pub fn extension(&self) -> Option<(u16, &[u8])> {
+    /// Returns the extension data for this packet parsed as the provided extension block type.
+    ///
+    /// `Ok(None)` is returned if the packet contains no header extension.  `Err` is returned if
+    /// the packet contains a header extension that cannot be parsed as `E` (for example, the
+    /// profile identifier does not match the expected implementation).
+    pub fn extension<E: RtpExtensionsBlock<'a>>(&self) -> Result<Option<E>, RtpParseError> {
         if self.extension_bit() {
             let offset = self.extension_offset();
             let id = (self.data[offset] as u16) << 8 | self.data[offset + 1] as u16;
             let offset = offset + 4;
-            Some((id, &self.data[offset..][..self.extension_len()]))
+            E::parse(id, &self.data[offset..][..self.extension_len()]).map(Some)
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -271,7 +282,7 @@ impl<'a> RtpPacket<'a> {
 
     /// Creates a builder that will be able to reconstruct this packet byte for byte (excluding
     /// any padding bytes).  Any aspect of the returned builder can be modified.
-    pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<&'a [u8], &'a [u8]> {
+    pub fn as_builder(&'a self) -> crate::RtpPacketBuilder<&'a [u8], ExtensionBlock<'a>> {
         let mut builder = crate::RtpPacketBuilder::new()
             .marker_bit(self.marker_bit())
             .payload_type(self.payload_type())
@@ -282,8 +293,8 @@ impl<'a> RtpPacket<'a> {
         for csrc in self.csrc() {
             builder = builder.add_csrc(csrc);
         }
-        if let Some((ext_id, ext_data)) = self.extension() {
-            builder = builder.extension(ext_id, ext_data);
+        if let Ok(Some(ext)) = self.extension() {
+            builder = builder.extension(ext);
         }
         if let Some(padding) = self.padding() {
             builder = builder.padding(padding);
@@ -294,6 +305,11 @@ impl<'a> RtpPacket<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        extension::Mid, RtpPacketBuilder, RtpSingleByteExtension, RtpTwoByteExtension,
+        RtpTwoByteExtensionBuilder,
+    };
+
     use super::*;
 
     #[test]
@@ -311,8 +327,8 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x07080910);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
-        assert_eq!(rtp.payload(), &[]);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert!(rtp.payload().is_empty());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -349,8 +365,8 @@ mod tests {
         let mut csrc = rtp.csrc();
         assert_eq!(csrc.next(), Some(0x11121314));
         assert_eq!(csrc.next(), None);
-        assert_eq!(rtp.extension(), None);
-        assert_eq!(rtp.payload(), &[]);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert!(rtp.payload().is_empty());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -388,9 +404,9 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(
             rtp.extension(),
-            Some((0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
+            Ok(ExtensionBlock::parse(0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()).ok())
         );
-        assert_eq!(rtp.payload(), &[]);
+        assert!(rtp.payload().is_empty());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -441,7 +457,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x0708090a);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
@@ -463,7 +479,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x0708090a);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
         assert_eq!(rtp.payload_len(), 2);
         let built = rtp.as_builder().write_vec().unwrap();
@@ -493,5 +509,35 @@ mod tests {
             RtpPacket::parse(data.as_ref()),
             Err(RtpParseError::PaddingInvalid(0))
         ));
+    }
+
+    #[test]
+    fn extension_profile_dispatch() {
+        // A two-byte profile block (0x100a) must parse as RtpTwoByteExtension
+        // and must NOT parse as RtpSingleByteExtension: `RtpPacket::extension`
+        // swallows profile mismatches into `None`.
+        let mut block = RtpTwoByteExtensionBuilder::default();
+        block.app_bits(0xa);
+        block.push_extension(1, Mid::new("1".to_string())).unwrap();
+        let builder = RtpPacketBuilder::new()
+            .payload_type(96)
+            .sequence_number(0x0102)
+            .timestamp(0x03040506)
+            .ssrc(0x0708090a)
+            .extension(block);
+        let data = builder.write_vec().unwrap();
+        let rtp = RtpPacket::parse(&data).unwrap();
+        let two_byte = rtp.extension::<RtpTwoByteExtension>().unwrap().unwrap();
+        assert_eq!(two_byte.app_bits(), 0xa);
+        let mut it = two_byte.iter();
+        assert_eq!(it.next(), Some((0x1, [0x31].as_ref())));
+        assert_eq!(it.next(), None);
+        // A profile mismatch is now surfaced as an error rather than `None`.
+        assert_eq!(
+            rtp.extension::<RtpSingleByteExtension>(),
+            Err(RtpParseError::UnsupportedExtensionImplementation)
+        );
+        let ext_block = rtp.extension::<ExtensionBlock>().unwrap().unwrap();
+        assert_eq!(ext_block.data(), [0x01, 0x01, 0x31, 0x00].as_slice());
     }
 }

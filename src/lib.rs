@@ -11,6 +11,7 @@
 
 mod builder;
 mod edit;
+pub mod extension;
 mod packet;
 
 pub use builder::{
@@ -18,9 +19,15 @@ pub use builder::{
     RtpWriteError,
 };
 pub use edit::RtpPacketMut;
+pub use extension::one::{RtpSingleByteExtension, RtpSingleByteExtensionBuilder};
+pub use extension::two::{RtpTwoByteExtension, RtpTwoByteExtensionBuilder};
+pub use extension::{RtpExtension, RtpExtensionWrite, RtpExtensionsBlock, RtpExtensionsBlockWrite};
 pub use packet::{RtpPacket, RtpParseError};
 
 /// Prelude module for defined/implementable traits
 pub mod prelude {
     pub use crate::builder::{PayloadLength, RtpPacketWriter};
+    pub use crate::extension::{
+        RtpExtension, RtpExtensionWrite, RtpExtensionsBlock, RtpExtensionsBlockWrite,
+    };
 }
