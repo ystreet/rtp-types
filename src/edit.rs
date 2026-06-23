@@ -112,6 +112,8 @@ impl<'a> RtpPacketMut<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{extension::ExtensionBlock, RtpExtensionsBlock};
+
     use super::*;
 
     #[test]
@@ -129,7 +131,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x07080910);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert_eq!(rtp.payload(), &[0x11]);
         assert_eq!(rtp.payload_mut(), [0x11].as_mut_slice());
         rtp.set_marker_bit(true);
@@ -178,7 +180,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(
             rtp.extension(),
-            Some((0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
+            ExtensionBlock::parse(0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()).ok()
         );
         assert_eq!(rtp.payload(), &[]);
         assert_eq!(rtp.payload_mut(), &mut []);
@@ -196,7 +198,7 @@ mod tests {
         rtp.set_extension_id(0x1234);
         assert_eq!(
             rtp.extension(),
-            Some((0x1234, [0x0d, 0x0e, 0x0f, 0x10].as_ref()))
+            ExtensionBlock::parse(0x1234, [0x0d, 0x0e, 0x0f, 0x10].as_ref()).ok()
         );
         assert_eq!(
             rtp.extension_mut(),
@@ -220,7 +222,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x0708090a);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
 
         rtp.set_marker_bit(true);
@@ -254,7 +256,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x56789abc);
         assert_eq!(rtp.ssrc(), 0xdef01234);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension(), None);
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
         assert_eq!(rtp.payload_len(), 2);
 

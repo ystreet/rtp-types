@@ -2,7 +2,8 @@
 
 use std::marker::PhantomData;
 
-use crate::RtpPacket;
+use crate::extension::ExtensionBlock;
+use crate::{RtpExtensionsBlockWrite, RtpPacket};
 
 /// Errors produced when wrting a packet
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -33,7 +34,8 @@ pub enum RtpWriteError {
 /// Struct for building a new RTP packet.
 #[derive(Debug)]
 #[must_use = "The builder must be built to be used"]
-pub struct RtpPacketBuilder<P: PayloadLength, E: PayloadLength> {
+pub struct RtpPacketBuilder<P: PayloadLength, E: RtpExtensionsBlockWrite = ExtensionBlock<'static>>
+{
     padding: Option<u8>,
     csrcs: smallvec::SmallVec<[u32; 15]>,
     marker_bit: bool,
@@ -41,19 +43,12 @@ pub struct RtpPacketBuilder<P: PayloadLength, E: PayloadLength> {
     sequence_number: u16,
     timestamp: u32,
     ssrc: u32,
-    extension: Option<(u16, E)>,
+    extension: Option<E>,
     payloads: smallvec::SmallVec<[P; 16]>,
 }
 
-impl<P: PayloadLength, E: PayloadLength> Default for RtpPacketBuilder<P, E> {
+impl<P: PayloadLength, E: RtpExtensionsBlockWrite> Default for RtpPacketBuilder<P, E> {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
-    /// Construct a new packet builder.
-    pub fn new() -> RtpPacketBuilder<P, E> {
         Self {
             padding: None,
             csrcs: smallvec::smallvec![],
@@ -67,7 +62,16 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
             payloads: smallvec::SmallVec::new(),
         }
     }
+}
 
+impl<P: PayloadLength> RtpPacketBuilder<P, ExtensionBlock<'static>> {
+    /// Construct a new packet builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<P: PayloadLength, E: RtpExtensionsBlockWrite> RtpPacketBuilder<P, E> {
     /// Set the number of padding bytes to use for this packet.
     pub fn padding(mut self, padding: u8) -> Self {
         self.padding = Some(padding);
@@ -129,9 +133,18 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     }
 
     /// Set the extension header for this packet.
-    pub fn extension(mut self, extension_id: u16, extension_data: E) -> Self {
-        self.extension = Some((extension_id, extension_data));
-        self
+    pub fn extension<F: RtpExtensionsBlockWrite>(self, extension: F) -> RtpPacketBuilder<P, F> {
+        RtpPacketBuilder {
+            extension: Some(extension),
+            padding: self.padding,
+            csrcs: self.csrcs,
+            marker_bit: self.marker_bit,
+            payload_type: self.payload_type,
+            sequence_number: self.sequence_number,
+            timestamp: self.timestamp,
+            ssrc: self.ssrc,
+            payloads: self.payloads,
+        }
     }
 
     /// Clear any extension data configured for this packet.
@@ -158,14 +171,15 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     /// Calculate the size required for writing the packet.
     pub fn calculate_size(&self) -> Result<usize, RtpWriteError> {
         let payload_len = self.payloads.iter().map(|p| p.len()).sum::<usize>();
-        let extension_len = if let Some((_ext_id, ext_data)) = self.extension.as_ref() {
-            if ext_data.len() % 4 != 0 {
+        let extension_len = if let Some(ext) = self.extension.as_ref() {
+            let len = ext.byte_len();
+            if len % 4 != 0 {
                 return Err(RtpWriteError::ExtensionDataNotPadded);
             }
-            if ext_data.len() > u16::MAX as usize {
+            if len > u16::MAX as usize {
                 return Err(RtpWriteError::PacketTooLarge);
             }
-            4 + ext_data.len()
+            4 + len
         } else {
             0
         };
@@ -232,7 +246,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     /// Write this packet using writer without any validity checks.
     pub fn write_unchecked<O>(
         &self,
-        writer: &mut impl RtpPacketWriter<Payload = P, Extension = E, Output = O>,
+        writer: &mut impl RtpPacketWriter<Payload = P, Output = O>,
     ) -> O {
         let mut hdr = [0; RtpPacket::MIN_RTP_PACKET_LEN];
         self.write_header_into(&mut hdr);
@@ -242,10 +256,12 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
             writer.push(csrc.to_be_bytes().as_ref());
         }
 
-        if let Some((ext_id, ext_data)) = self.extension.as_ref() {
+        if let Some(ext) = self.extension.as_ref() {
+            let ext_id = ext.extension_id();
+            let ext_len = ext.byte_len();
             writer.push(ext_id.to_be_bytes().as_ref());
-            writer.push(((ext_data.len() / 4) as u16).to_be_bytes().as_ref());
-            writer.push_extension(ext_data);
+            writer.push(((ext_len / 4) as u16).to_be_bytes().as_ref());
+            ext.write(writer);
         }
 
         for payload in self.payloads.iter() {
@@ -262,7 +278,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     /// Write the packet using writer.
     pub fn write<O>(
         &self,
-        writer: &mut impl RtpPacketWriter<Payload = P, Extension = E, Output = O>,
+        writer: &mut impl RtpPacketWriter<Payload = P, Output = O>,
     ) -> Result<O, RtpWriteError> {
         let len = self.write_preconditions()?;
         if let Some(max_size) = writer.max_size() {
@@ -276,7 +292,7 @@ impl<P: PayloadLength, E: PayloadLength> RtpPacketBuilder<P, E> {
     }
 }
 
-impl RtpPacketBuilder<&[u8], &[u8]> {
+impl<E: RtpExtensionsBlockWrite> RtpPacketBuilder<&[u8], E> {
     /// Write this packet into `buf` without any validity checks.  Returns the number of bytes
     /// written.
     pub fn write_into_unchecked(&self, buf: &mut [u8]) -> usize {
@@ -333,8 +349,6 @@ pub trait RtpPacketWriter {
     type Output;
     /// The type of the RTP payload to be stored in the output packet.
     type Payload: PayloadLength;
-    /// The type of the RTP extension data to be stored in the output packet:was.
-    type Extension: PayloadLength;
 
     /// Reserve a number of bytes in the output.  Multiple calls are possible and provide the
     /// entire size to reserve.
@@ -348,10 +362,6 @@ pub trait RtpPacketWriter {
 
     /// Provides data to append to the output.  May be called multiple times per packet.
     fn push(&mut self, data: &[u8]);
-
-    /// Provides the extension data to add to the output.  The extension should be written as-is
-    /// without any transformations.
-    fn push_extension(&mut self, extension_data: &Self::Extension);
 
     /// Provides the payload data to add to the output.  The payload should be written as-is
     /// without any transformations.
@@ -395,16 +405,15 @@ impl<T, const N: usize> PayloadLength for &[T; N] {
 
 /// An implementation of a [`RtpPacketWriter`] that appends to a `Vec<u8>`.
 #[derive(Default, Debug)]
-pub struct RtpPacketWriterVec<'a, 'b> {
+pub struct RtpPacketWriterVec<'a> {
     output: Vec<u8>,
     padding: Option<u8>,
-    phantom: PhantomData<(&'a [u8], &'b [u8])>,
+    phantom: PhantomData<&'a [u8]>,
 }
 
-impl<'a, 'b> RtpPacketWriter for RtpPacketWriterVec<'a, 'b> {
+impl<'a> RtpPacketWriter for RtpPacketWriterVec<'a> {
     type Output = Vec<u8>;
     type Payload = &'a [u8];
-    type Extension = &'b [u8];
 
     fn reserve(&mut self, size: usize) {
         if self.output.len() < size {
@@ -414,10 +423,6 @@ impl<'a, 'b> RtpPacketWriter for RtpPacketWriterVec<'a, 'b> {
 
     fn push(&mut self, data: &[u8]) {
         self.output.extend_from_slice(data)
-    }
-
-    fn push_extension(&mut self, extension_data: &Self::Extension) {
-        self.push(extension_data)
     }
 
     fn push_payload(&mut self, data: &Self::Payload) {
@@ -443,14 +448,14 @@ impl<'a, 'b> RtpPacketWriter for RtpPacketWriterVec<'a, 'b> {
 /// An implementation of a [`RtpPacketWriter`] that writes to a `&mut [u8]`.  Each packet will be
 /// written starting at the beginning of the provided slice.
 #[derive(Default, Debug)]
-pub struct RtpPacketWriterMutSlice<'a, 'b, 'c> {
+pub struct RtpPacketWriterMutSlice<'a, 'b> {
     output: &'a mut [u8],
     padding: Option<u8>,
     write_i: usize,
-    phantom: PhantomData<(&'b [u8], &'c [u8])>,
+    phantom: PhantomData<&'b [u8]>,
 }
 
-impl<'a> RtpPacketWriterMutSlice<'a, '_, '_> {
+impl<'a> RtpPacketWriterMutSlice<'a, '_> {
     /// Construct a new [`RtpPacketWriterMutSlice`] from the provided slice.
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
@@ -462,7 +467,7 @@ impl<'a> RtpPacketWriterMutSlice<'a, '_, '_> {
     }
 }
 
-impl std::ops::Deref for RtpPacketWriterMutSlice<'_, '_, '_> {
+impl std::ops::Deref for RtpPacketWriterMutSlice<'_, '_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -470,16 +475,15 @@ impl std::ops::Deref for RtpPacketWriterMutSlice<'_, '_, '_> {
     }
 }
 
-impl std::ops::DerefMut for RtpPacketWriterMutSlice<'_, '_, '_> {
+impl std::ops::DerefMut for RtpPacketWriterMutSlice<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b, 'c> {
+impl<'b> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b> {
     type Output = usize;
     type Payload = &'b [u8];
-    type Extension = &'c [u8];
 
     fn max_size(&self) -> Option<usize> {
         Some(self.output.len())
@@ -488,10 +492,6 @@ impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b, 'c> {
     fn push(&mut self, data: &[u8]) {
         self.output[self.write_i..self.write_i + data.len()].copy_from_slice(data);
         self.write_i += data.len();
-    }
-
-    fn push_extension(&mut self, extension_data: &Self::Extension) {
-        self.push(extension_data)
     }
 
     fn push_payload(&mut self, data: &Self::Payload) {
@@ -519,13 +519,13 @@ impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutSlice<'_, 'b, 'c> {
 /// written will be appended to the provide `Vec<u8>`.  You can `clear()` the vec in between packets
 /// to have each packet written from the beginning of the vec.
 #[derive(Debug)]
-pub struct RtpPacketWriterMutVec<'a, 'b, 'c> {
+pub struct RtpPacketWriterMutVec<'a, 'b> {
     output: &'a mut Vec<u8>,
     padding: Option<u8>,
-    phantom: PhantomData<(&'b [u8], &'c [u8])>,
+    phantom: PhantomData<&'b [u8]>,
 }
 
-impl<'a> RtpPacketWriterMutVec<'a, '_, '_> {
+impl<'a> RtpPacketWriterMutVec<'a, '_> {
     /// Construct a new [`RtpPacketWriterMutVec`] from a provided mutable `Vec<u8>`.
     pub fn new(buf: &'a mut Vec<u8>) -> Self {
         Self {
@@ -536,7 +536,7 @@ impl<'a> RtpPacketWriterMutVec<'a, '_, '_> {
     }
 }
 
-impl std::ops::Deref for RtpPacketWriterMutVec<'_, '_, '_> {
+impl std::ops::Deref for RtpPacketWriterMutVec<'_, '_> {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
@@ -544,23 +544,18 @@ impl std::ops::Deref for RtpPacketWriterMutVec<'_, '_, '_> {
     }
 }
 
-impl std::ops::DerefMut for RtpPacketWriterMutVec<'_, '_, '_> {
+impl std::ops::DerefMut for RtpPacketWriterMutVec<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
 }
 
-impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'_, 'b, 'c> {
+impl<'b> RtpPacketWriter for RtpPacketWriterMutVec<'_, 'b> {
     type Output = ();
     type Payload = &'b [u8];
-    type Extension = &'c [u8];
 
     fn push(&mut self, data: &[u8]) {
         self.output.extend(data);
-    }
-
-    fn push_extension(&mut self, extension_data: &Self::Extension) {
-        self.push(extension_data)
     }
 
     fn push_payload(&mut self, data: &Self::Payload) {
@@ -582,6 +577,8 @@ impl<'b, 'c> RtpPacketWriter for RtpPacketWriterMutVec<'_, 'b, 'c> {
 
 #[cfg(test)]
 mod tests {
+    use crate::RtpExtensionsBlock;
+
     use super::*;
 
     #[test]
@@ -625,7 +622,7 @@ mod tests {
             assert_eq!(rtp.timestamp(), 0x0);
             assert_eq!(rtp.ssrc(), 0x0);
             assert_eq!(rtp.csrc().count(), 0);
-            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -667,7 +664,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -751,7 +748,7 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, extension_data.as_ref());
+            .extension(ExtensionBlock::parse(0x9876, extension_data.as_ref()).unwrap());
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
         let buf2 = builder.write_vec_unchecked();
@@ -777,7 +774,10 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), Some((0x9876, extension_data.as_ref())));
+            assert_eq!(
+                rtp.extension(),
+                ExtensionBlock::parse(0x9876, extension_data.as_ref()).ok()
+            );
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -795,7 +795,7 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, extension_data.as_ref())
+            .extension(ExtensionBlock::parse(0x9876, extension_data.as_ref()).unwrap())
             .clear_extension();
         let size = builder.write_into(&mut data).unwrap();
         let buf = builder.write_vec().unwrap();
@@ -822,7 +822,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -841,7 +841,7 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, extension_data.as_ref())
+            .extension(ExtensionBlock::parse(0x9876, extension_data.as_ref()).unwrap())
             .payload(payload_data.as_ref())
             .padding(7);
         let size = builder.write_into(&mut data).unwrap();
@@ -869,7 +869,10 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), Some((0x9876, extension_data.as_ref())));
+            assert_eq!(
+                rtp.extension(),
+                ExtensionBlock::parse(0x9876, extension_data.as_ref()).ok()
+            );
             assert_eq!(rtp.payload(), payload_data.as_ref());
         }
     }
@@ -912,7 +915,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -939,7 +942,7 @@ mod tests {
         let mut vec = vec![];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .extension(0x9876, [1].as_ref());
+            .extension(ExtensionBlock::parse(0x9876, &[1]).unwrap());
         assert_eq!(
             builder.write_into(&mut data),
             Err(RtpWriteError::ExtensionDataNotPadded)
@@ -1027,7 +1030,7 @@ mod tests {
                 assert_eq!(csrc.next(), Some(i));
             }
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension(), None);
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -1075,7 +1078,7 @@ mod tests {
         let extension_data = [0; u16::MAX as usize + 1];
         let builder = RtpPacketBuilder::new()
             .payload_type(96)
-            .extension(0x9876, extension_data.as_ref());
+            .extension(ExtensionBlock::parse(0x9876, extension_data.as_ref()).unwrap());
         assert_eq!(
             builder.write_into(&mut data),
             Err(RtpWriteError::PacketTooLarge)
@@ -1116,7 +1119,7 @@ mod tests {
         assert_eq!(
             RtpPacketBuilder::new()
                 .payload_type(96)
-                .extension(0x9876, [].as_ref())
+                .extension(ExtensionBlock::parse(0x9876, &[]).unwrap())
                 .write_into(&mut data),
             Err(RtpWriteError::OutputTooSmall(16))
         );
@@ -1165,7 +1168,6 @@ mod tests {
     impl RtpPacketWriter for TestRtpWriterCustomPayload {
         type Output = Vec<u8>;
         type Payload = TestPayload;
-        type Extension = TestPayload;
 
         fn reserve(&mut self, size: usize) {
             if let Some(output) = self.output.as_mut() {
@@ -1193,10 +1195,6 @@ mod tests {
 
         fn push_payload(&mut self, payload: &Self::Payload) {
             self.push(&payload.0)
-        }
-
-        fn push_extension(&mut self, extension_data: &Self::Extension) {
-            self.push(&extension_data.0)
         }
 
         fn padding(&mut self, size: u8) {
@@ -1228,7 +1226,7 @@ mod tests {
             .timestamp(0x03040506)
             .ssrc(0x0708090a)
             .add_csrc(0x0b0c0d0e)
-            .extension(0x9876, TestPayload(extension_data.0.clone()))
+            .extension(ExtensionBlock::parse(0x9876, &extension_data.0).unwrap())
             .payload(TestPayload(payload_data.0.clone()))
             .padding(1);
         let max_size = builder.calculate_size().unwrap();
@@ -1252,9 +1250,9 @@ mod tests {
         let mut csrc = rtp.csrc();
         assert_eq!(csrc.next(), Some(0x0b0c0d0e));
         assert_eq!(csrc.next(), None);
-        let (ext_id, ext_data) = rtp.extension().unwrap();
-        assert_eq!(ext_id, 0x9876);
-        assert_eq!(ext_data, extension_data.0);
+        let ext = rtp.extension::<ExtensionBlock>().unwrap();
+        assert_eq!(ext.extension_id(), 0x9876);
+        assert_eq!(ext.data(), extension_data.0);
         assert_eq!(rtp.payload(), payload_data.0);
     }
 
