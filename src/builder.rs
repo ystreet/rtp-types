@@ -97,12 +97,6 @@ impl<P: PayloadLength, E: RtpExtensionsBlockWrite> RtpPacketBuilder<P, E> {
     }
 
     /// Set the marker bit for this packet.
-    #[deprecated = "Use `marker_bit()` instead"]
-    pub fn marker(self, marker: bool) -> Self {
-        self.marker_bit(marker)
-    }
-
-    /// Set the marker bit for this packet.
     pub fn marker_bit(mut self, marker_bit: bool) -> Self {
         self.marker_bit = marker_bit;
         self

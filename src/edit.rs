@@ -31,12 +31,6 @@ impl<'a> RtpPacketMut<'a> {
     }
 
     /// Change the marker bit of this packet.
-    #[deprecated = "Use `set_marker_bit()` instead"]
-    pub fn set_marker(&mut self, marker: bool) {
-        self.set_marker_bit(marker);
-    }
-
-    /// Change the marker bit of this packet.
     pub fn set_marker_bit(&mut self, marker_bit: bool) {
         if marker_bit {
             self.data[1] |= 0x80;

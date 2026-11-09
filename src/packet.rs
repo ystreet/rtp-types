@@ -175,13 +175,6 @@ impl<'a> RtpPacket<'a> {
 
     /// Returns whether the marker bit is set for this packet.  The meaning of the marker bit
     /// is payload-specific.
-    #[deprecated = "Use `marker_bit()` instead"]
-    pub fn marker(&self) -> bool {
-        self.marker_bit()
-    }
-
-    /// Returns whether the marker bit is set for this packet.  The meaning of the marker bit
-    /// is payload-specific.
     pub fn marker_bit(&self) -> bool {
         (self.data[1] & 0b1000_0000) != 0
     }
