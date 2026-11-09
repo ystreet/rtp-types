@@ -296,6 +296,12 @@ impl<'a> RtpPacket<'a> {
     }
 }
 
+impl AsRef<[u8]> for RtpPacket<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.data
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -322,6 +328,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
         assert!(rtp.payload().is_empty());
+        assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -400,6 +407,7 @@ mod tests {
             Ok(ExtensionBlock::parse(0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()).ok())
         );
         assert!(rtp.payload().is_empty());
+        assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -452,6 +460,7 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
+        assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
@@ -475,6 +484,7 @@ mod tests {
         assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
         assert_eq!(rtp.payload_len(), 2);
+        assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
     }
