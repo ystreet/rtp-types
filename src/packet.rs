@@ -60,7 +60,7 @@ impl fmt::Debug for RtpPacket<'_> {
             .field("timestamp", &self.timestamp())
             .field("ssrc", &self.ssrc())
             .field("csrc", &DebugCsrc(self))
-            .field("extension", &self.extension::<ExtensionBlock>().ok())
+            .field("extension", &self.extension::<ExtensionBlock>())
             .field("payload", &self.payload())
             .field("padding", &self.padding())
             .finish()
@@ -237,14 +237,14 @@ impl<'a> RtpPacket<'a> {
     /// `Ok(None)` is returned if the packet contains no header extension.  `Err` is returned if
     /// the packet contains a header extension that cannot be parsed as `E` (for example, the
     /// profile identifier does not match the expected implementation).
-    pub fn extension<E: RtpExtensionsBlock<'a>>(&self) -> Result<Option<E>, RtpParseError> {
+    pub fn extension<E: RtpExtensionsBlock<'a>>(&self) -> Option<Result<E, RtpParseError>> {
         if self.extension_bit() {
             let offset = self.extension_offset();
             let id = (self.data[offset] as u16) << 8 | self.data[offset + 1] as u16;
             let offset = offset + 4;
-            E::parse(id, &self.data[offset..][..self.extension_len()]).map(Some)
+            Some(E::parse(id, &self.data[offset..][..self.extension_len()]))
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -286,7 +286,7 @@ impl<'a> RtpPacket<'a> {
         for csrc in self.csrc() {
             builder = builder.add_csrc(csrc);
         }
-        if let Ok(Some(ext)) = self.extension() {
+        if let Some(Ok(ext)) = self.extension() {
             builder = builder.extension(ext);
         }
         if let Some(padding) = self.padding() {
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x07080910);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert!(rtp.payload().is_empty());
         assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
@@ -365,7 +365,7 @@ mod tests {
         let mut csrc = rtp.csrc();
         assert_eq!(csrc.next(), Some(0x11121314));
         assert_eq!(csrc.next(), None);
-        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert!(rtp.payload().is_empty());
         let built = rtp.as_builder().write_vec().unwrap();
         assert_eq!(built, data.as_ref());
@@ -404,7 +404,10 @@ mod tests {
         assert_eq!(rtp.csrc().count(), 0);
         assert_eq!(
             rtp.extension(),
-            Ok(ExtensionBlock::parse(0x0b0c, [0x0d, 0x0e, 0x0f, 0x10].as_ref()).ok())
+            Some(ExtensionBlock::parse(
+                0x0b0c,
+                [0x0d, 0x0e, 0x0f, 0x10].as_ref()
+            ))
         );
         assert!(rtp.payload().is_empty());
         assert_eq!(rtp.as_ref(), data.as_slice());
@@ -458,7 +461,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x0708090a);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c, 0x0d, 0x0e]);
         assert_eq!(rtp.as_ref(), data.as_slice());
         let built = rtp.as_builder().write_vec().unwrap();
@@ -481,7 +484,7 @@ mod tests {
         assert_eq!(rtp.timestamp(), 0x03040506);
         assert_eq!(rtp.ssrc(), 0x0708090a);
         assert_eq!(rtp.csrc().count(), 0);
-        assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+        assert_eq!(rtp.extension::<ExtensionBlock>(), None);
         assert_eq!(rtp.payload(), &[0x0b, 0x0c]);
         assert_eq!(rtp.payload_len(), 2);
         assert_eq!(rtp.as_ref(), data.as_slice());
@@ -538,7 +541,7 @@ mod tests {
         // A profile mismatch is now surfaced as an error rather than `None`.
         assert_eq!(
             rtp.extension::<RtpSingleByteExtension>(),
-            Err(RtpParseError::UnsupportedExtensionImplementation)
+            Some(Err(RtpParseError::UnsupportedExtensionImplementation))
         );
         let ext_block = rtp.extension::<ExtensionBlock>().unwrap().unwrap();
         assert_eq!(ext_block.data(), [0x01, 0x01, 0x31, 0x00].as_slice());

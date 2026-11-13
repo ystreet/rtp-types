@@ -618,7 +618,7 @@ mod tests {
             assert_eq!(rtp.timestamp(), 0x0);
             assert_eq!(rtp.ssrc(), 0x0);
             assert_eq!(rtp.csrc().count(), 0);
-            assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -660,7 +660,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -772,7 +772,7 @@ mod tests {
             assert_eq!(csrc.next(), None);
             assert_eq!(
                 rtp.extension(),
-                Ok(ExtensionBlock::parse(0x9876, extension_data.as_ref()).ok())
+                Some(ExtensionBlock::parse(0x9876, extension_data.as_ref()))
             );
             assert_eq!(rtp.payload(), &[]);
         }
@@ -818,7 +818,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -867,7 +867,7 @@ mod tests {
             assert_eq!(csrc.next(), None);
             assert_eq!(
                 rtp.extension(),
-                Ok(ExtensionBlock::parse(0x9876, extension_data.as_ref()).ok())
+                Some(ExtensionBlock::parse(0x9876, extension_data.as_ref()))
             );
             assert_eq!(rtp.payload(), payload_data.as_ref());
         }
@@ -911,7 +911,7 @@ mod tests {
             let mut csrc = rtp.csrc();
             assert_eq!(csrc.next(), Some(0x0b0c0d0e));
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
@@ -1026,7 +1026,7 @@ mod tests {
                 assert_eq!(csrc.next(), Some(i));
             }
             assert_eq!(csrc.next(), None);
-            assert_eq!(rtp.extension::<ExtensionBlock>(), Ok(None));
+            assert_eq!(rtp.extension::<ExtensionBlock>(), None);
             assert_eq!(rtp.payload(), &[]);
         }
     }
