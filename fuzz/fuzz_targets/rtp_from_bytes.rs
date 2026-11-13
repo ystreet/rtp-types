@@ -8,10 +8,10 @@ fuzz_target!(|data: &[u8]| {
             // ignore any padding as its contents in the original data are undefined
             assert_eq!(&built[..built.len() - padding as usize], &data[..data.len() - padding as usize]);
             let _ = packet.extension::<rtp_types::extension::ExtensionBlock>();
-            if let Ok(Some(ext)) = packet.extension::<rtp_types::RtpSingleByteExtension>() {
+            if let Some(Ok(ext)) = packet.extension::<rtp_types::RtpSingleByteExtension>() {
                 for _ in ext.iter() {}
             }
-            if let Ok(Some(ext)) = packet.extension::<rtp_types::RtpTwoByteExtension>() {
+            if let Some(Ok(ext)) = packet.extension::<rtp_types::RtpTwoByteExtension>() {
                 for _ in ext.iter() {}
             }
         } else {
