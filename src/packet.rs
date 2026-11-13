@@ -234,7 +234,7 @@ impl<'a> RtpPacket<'a> {
 
     /// Returns the extension data for this packet parsed as the provided extension block type.
     ///
-    /// `Ok(None)` is returned if the packet contains no header extension.  `Err` is returned if
+    /// `None` is returned if the packet contains no header extension.  `Some(Err(_))` is returned if
     /// the packet contains a header extension that cannot be parsed as `E` (for example, the
     /// profile identifier does not match the expected implementation).
     pub fn extension<E: RtpExtensionsBlock<'a>>(&self) -> Option<Result<E, RtpParseError>> {
